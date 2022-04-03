@@ -1,0 +1,10 @@
+{
+  "files.associations": {
+    "cstdarg": "c",
+    "cstddef": "c",
+    "cstdio": "c",
+    "unistd.h": "c",
+    "stdint.h": "c",
+    "inet.h": "c"
+  }
+}
