@@ -1,4 +1,5 @@
 #include "tcp_context.h"
+#include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <malloc.h>
@@ -8,11 +9,13 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <arpa/inet.h>
+
+#define INTERNAL_BUFFER_SIZE (64 * 1024)
 
 typedef struct {
   void (*on_client_connected)(void *c_info);
   void (*on_client_disconnected)(void *c_info);
+  void (*on_received)(void *c_info, const void *in, const unsigned int len);
 } events;
 
 typedef struct {
@@ -21,17 +24,17 @@ typedef struct {
   int fd;
 } client_info;
 
-const char* socev_get_connected_client_ip(void* c_info) {
-  if(c_info) {
-    client_info* inf = (client_info*)c_info;
+const char *socev_get_connected_client_ip(void *c_info) {
+  if (c_info) {
+    client_info *inf = (client_info *)c_info;
     return inf->ip;
   }
   return NULL;
 }
 
-unsigned short socev_get_connected_client_port(void* c_info) {
-  if(c_info) {
-    client_info* inf = (client_info*)c_info;
+unsigned short socev_get_connected_client_port(void *c_info) {
+  if (c_info) {
+    client_info *inf = (client_info *)c_info;
     return inf->port;
   }
   return 0;
@@ -44,6 +47,7 @@ typedef struct {
   client_info *client_info_list;
   struct pollfd *fd_list;
   int curr_idx;
+  char *receive_buffer;
   events events;
 } tcp_context;
 
@@ -57,6 +61,16 @@ void *socev_create_tcp_context(tcp_context_params params) {
 
   // clear context
   memset(ctx, 0, sizeof(tcp_context));
+
+  ctx->receive_buffer = (char *)malloc(INTERNAL_BUFFER_SIZE);
+  if (!ctx->receive_buffer) {
+    fprintf(stderr, "socev_create_tcp_context err: %s\n", strerror(errno));
+    socev_destroy_tcp_context(ctx);
+    return NULL;
+  }
+
+  // clear receive buffer
+  memset(ctx->receive_buffer, 0, INTERNAL_BUFFER_SIZE);
 
   ctx->events.on_client_connected = params.on_client_connected;
   ctx->events.on_client_disconnected = params.on_client_disconnected;
@@ -130,7 +144,7 @@ void *socev_create_tcp_context(tcp_context_params params) {
   // 1st pollfd is for the listening fd
   ctx->curr_idx = 0;
   ctx->fd_list[ctx->curr_idx].fd = ctx->fd;
-  ctx->fd_list[ctx->curr_idx].events = POLLIN;
+  ctx->fd_list[ctx->curr_idx].events = POLLIN | POLLOUT | POLLERR | POLLHUP;
   ctx->curr_idx++;
 
   if (listen(ctx->fd, ctx->max_client_count) == -1) {
@@ -165,6 +179,11 @@ void socev_destroy_tcp_context(void *ctx) {
     // close listening socket
     if (tcp_ctx->fd != -1) {
       close(tcp_ctx->fd);
+    }
+
+    // free receive buffer
+    if (tcp_ctx->receive_buffer) {
+      free(tcp_ctx->receive_buffer);
     }
 
     // release tcp context
@@ -221,6 +240,22 @@ int do_accept(tcp_context *tcp_ctx) {
   return new_client_fd;
 }
 
+int do_receive(tcp_context *tcp_ctx, int idx) {
+  client_info *c_info = &tcp_ctx->client_info_list[idx];
+  ssize_t bytes =
+      recv(c_info->fd, tcp_ctx->receive_buffer, INTERNAL_BUFFER_SIZE, 0);
+  if (bytes == -1) {
+    fprintf(stderr, "do_receive err: %s\n", strerror(errno));
+    return -1;
+  }
+
+  if (tcp_ctx->events.on_received) {
+    tcp_ctx->events.on_received(c_info, tcp_ctx->receive_buffer, bytes);
+  }
+
+  return 0;
+}
+
 int socev_service(void *ctx, int timeout_ms) {
   int result = -1;
 
@@ -235,12 +270,28 @@ int socev_service(void *ctx, int timeout_ms) {
 
     if (result > 0) {
       if (tcp_ctx->fd_list[0].revents & POLLIN) {
-        if(do_accept(tcp_ctx) == -1) {
+        if (do_accept(tcp_ctx) == -1) {
           fprintf(stderr, "do_accept failed\n");
         }
       }
 
-
+      for (int idx = 1; idx < tcp_ctx->curr_idx; ++idx) {
+        struct pollfd *pfd = &tcp_ctx->fd_list[idx];
+        if (pfd->revents & POLLIN) {
+          if (do_receive(tcp_ctx, idx) == -1) {
+            fprintf(stderr, "do_receive failed\n");
+          }
+        }
+        if (pfd->revents & POLLERR) {
+          fprintf(stderr, "POLLERR\n");
+        }
+        if (pfd->revents & POLLHUP) {
+          fprintf(stderr, "POLLHUP\n");
+        }
+        if (pfd->revents & POLLOUT) {
+          fprintf(stderr, "POLLOUT\n");
+        }
+      }
     }
   }
 

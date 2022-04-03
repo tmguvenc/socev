@@ -4,10 +4,9 @@
 typedef struct {
   unsigned short port;
   unsigned int max_client_count;
-
   void (*on_client_connected)(void *c_info);
   void (*on_client_disconnected)(void *c_info);
-
+  void (*on_received)(void *c_info, const void* in, const unsigned int len);
 } tcp_context_params;
 
 void* socev_create_tcp_context(tcp_context_params params);
