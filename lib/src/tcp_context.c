@@ -21,6 +21,22 @@ typedef struct {
   int fd;
 } client_info;
 
+const char* socev_get_connected_client_ip(void* c_info) {
+  if(c_info) {
+    client_info* inf = (client_info*)c_info;
+    return inf->ip;
+  }
+  return NULL;
+}
+
+unsigned short socev_get_connected_client_port(void* c_info) {
+  if(c_info) {
+    client_info* inf = (client_info*)c_info;
+    return inf->port;
+  }
+  return 0;
+}
+
 typedef struct {
   int fd;
   unsigned short port;
@@ -41,6 +57,9 @@ void *socev_create_tcp_context(tcp_context_params params) {
 
   // clear context
   memset(ctx, 0, sizeof(tcp_context));
+
+  ctx->events.on_client_connected = params.on_client_connected;
+  ctx->events.on_client_disconnected = params.on_client_disconnected;
 
   ctx->port = params.port;
   ctx->fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -106,7 +125,7 @@ void *socev_create_tcp_context(tcp_context_params params) {
   }
 
   // clear pollfd list
-  memset(ctx->fd_list, 0, (ctx->max_client_count + 1) * sizeof(client_info));
+  memset(ctx->fd_list, 0, (ctx->max_client_count + 1) * sizeof(struct pollfd));
 
   // 1st pollfd is for the listening fd
   ctx->curr_idx = 0;
@@ -205,7 +224,7 @@ int do_accept(tcp_context *tcp_ctx) {
 int socev_service(void *ctx, int timeout_ms) {
   int result = -1;
 
-  if (!ctx) {
+  if (ctx) {
     tcp_context *tcp_ctx = (tcp_context *)(ctx);
     result = poll(tcp_ctx->fd_list, tcp_ctx->curr_idx, timeout_ms);
 
@@ -221,7 +240,7 @@ int socev_service(void *ctx, int timeout_ms) {
         }
       }
 
-      
+
     }
   }
 
