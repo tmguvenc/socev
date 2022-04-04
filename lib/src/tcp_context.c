@@ -1,21 +1,41 @@
 #include "tcp_context.h"
-#include "client_info.h"
 #include <arpa/inet.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <malloc.h>
-#include <netinet/in.h>
 #include <poll.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include "utils.h"
 
 #define INTERNAL_BUFFER_SIZE (64 * 1024)
 
 typedef struct {
-  int fd;
   unsigned short port;
+  char ip[16];
+  int fd;
+  struct pollfd *pfd;
+} client_info;
+
+const char *socev_get_connected_client_ip(void *c_info) {
+  if (c_info) {
+    client_info *inf = (client_info *)c_info;
+    return inf->ip;
+  }
+  return NULL;
+}
+
+unsigned short socev_get_connected_client_port(void *c_info) {
+  if (c_info) {
+    client_info *inf = (client_info *)c_info;
+    return inf->port;
+  }
+  return 0;
+}
+
+typedef struct {
+  int fd;
   unsigned int max_client_count;
   client_info *client_info_list;
   struct pollfd *fd_list;
@@ -48,32 +68,9 @@ void *socev_create_tcp_context(tcp_context_params params) {
 
   ctx->callback = params.callback;
 
-  ctx->port = params.port;
-  ctx->fd = socket(AF_INET, SOCK_STREAM, 0);
-  if (ctx->fd == -1) {
-    fprintf(stderr, "socev_create_tcp_context err: %s\n", strerror(errno));
-    socev_destroy_tcp_context(ctx);
-    return NULL;
-  }
-
-  const int optval = 1;
-  if (setsockopt(ctx->fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) ==
-      -1) {
-    fprintf(stderr, "socev_create_tcp_context err: %s\n", strerror(errno));
-    socev_destroy_tcp_context(ctx);
-    return NULL;
-  }
-
-  struct sockaddr_in server;
-  memset(&server, 0, sizeof(struct sockaddr_in));
-
-  server.sin_family = AF_INET;
-  server.sin_port = htons(ctx->port);
-  server.sin_addr.s_addr = INADDR_ANY;
-
-  if (bind(ctx->fd, (struct sockaddr *)(&server), sizeof(struct sockaddr_in)) ==
-      -1) {
-    fprintf(stderr, "socev_create_tcp_context err: %s\n", strerror(errno));
+  ctx->fd = create_socket(params.port);
+  if(ctx->fd == -1) {
+    fprintf(stderr, "socket create failed\n");
     socev_destroy_tcp_context(ctx);
     return NULL;
   }
@@ -117,7 +114,7 @@ void *socev_create_tcp_context(tcp_context_params params) {
   // 1st pollfd is for the listening fd
   ctx->curr_idx = 0;
   ctx->fd_list[ctx->curr_idx].fd = ctx->fd;
-  ctx->fd_list[ctx->curr_idx].events = POLLIN | POLLOUT | POLLERR | POLLHUP;
+  ctx->fd_list[ctx->curr_idx].events = POLLIN | POLLERR | POLLHUP;
   ctx->curr_idx++;
 
   if (listen(ctx->fd, ctx->max_client_count) == -1) {
@@ -163,24 +160,6 @@ void socev_destroy_tcp_context(void *ctx) {
     free(tcp_ctx);
     tcp_ctx = NULL;
   }
-}
-
-int set_socket_nonblocking(int fd) {
-  int flags = fcntl(fd, F_GETFL, 0);
-  if (flags == -1) {
-    fprintf(stderr, "get socket flags err: %s\n", strerror(errno));
-    return -1;
-  }
-
-  flags |= O_NONBLOCK;
-
-  int result = fcntl(fd, F_SETFL, flags);
-
-  if (result == -1) {
-    fprintf(stderr, "set socket flags err: %s\n", strerror(errno));
-  }
-
-  return result;
 }
 
 void socev_callback_on_writable(void *c_info) {
