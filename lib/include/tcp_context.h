@@ -1,13 +1,18 @@
 #ifndef LIB_TCP_CONTEXT_H_
 #define LIB_TCP_CONTEXT_H_
 
+typedef enum {
+  CLIENT_CONNECTED = 0,
+  CLIENT_DISCONNECTED = 1,
+  CLIENT_WRITABLE = 2,
+  CLIENT_DATA_RECEIVED = 3,
+} event_type;
+
 typedef struct {
   unsigned short port;
   unsigned int max_client_count;
-  void (*on_client_connected)(void *c_info);
-  void (*on_client_disconnected)(void *c_info);
-  void (*on_client_writable)(void *c_info);
-  void (*on_received)(void *c_info, const void *in, const unsigned int len);
+  void (*callback)(const event_type ev, void *c_info, const void *in,
+                   const unsigned int len);
 } tcp_context_params;
 
 void *socev_create_tcp_context(tcp_context_params params);

@@ -14,13 +14,6 @@
 #define INTERNAL_BUFFER_SIZE (64 * 1024)
 
 typedef struct {
-  void (*on_client_connected)(void *c_info);
-  void (*on_client_disconnected)(void *c_info);
-  void (*on_client_writable)(void *c_info);
-  void (*on_received)(void *c_info, const void *in, const unsigned int len);
-} events;
-
-typedef struct {
   int fd;
   unsigned short port;
   unsigned int max_client_count;
@@ -28,7 +21,8 @@ typedef struct {
   struct pollfd *fd_list;
   int curr_idx;
   char *receive_buffer;
-  events events;
+  void (*callback)(const event_type ev, void *c_info, const void *in,
+                   const unsigned int len);
 } tcp_context;
 
 void *socev_create_tcp_context(tcp_context_params params) {
@@ -52,10 +46,7 @@ void *socev_create_tcp_context(tcp_context_params params) {
   // clear receive buffer
   memset(ctx->receive_buffer, 0, INTERNAL_BUFFER_SIZE);
 
-  ctx->events.on_client_connected = params.on_client_connected;
-  ctx->events.on_client_disconnected = params.on_client_disconnected;
-  ctx->events.on_received = params.on_received;
-  ctx->events.on_client_writable = params.on_client_writable;
+  ctx->callback = params.callback;
 
   ctx->port = params.port;
   ctx->fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -224,8 +215,8 @@ int do_accept(tcp_context *tcp_ctx) {
   tcp_ctx->fd_list[tcp_ctx->curr_idx].events = POLLIN;
   c_info->pfd = &tcp_ctx->fd_list[tcp_ctx->curr_idx];
 
-  if (tcp_ctx->events.on_client_connected) {
-    tcp_ctx->events.on_client_connected(c_info);
+  if (tcp_ctx->callback) {
+    tcp_ctx->callback(CLIENT_CONNECTED, c_info, NULL, 0);
   }
 
   tcp_ctx->curr_idx++;
@@ -248,8 +239,8 @@ int do_receive(tcp_context *tcp_ctx, int idx) {
 
   // client disconnected
   if (bytes == 0) {
-    if (tcp_ctx->events.on_client_disconnected) {
-      tcp_ctx->events.on_client_disconnected(c_info);
+    if (tcp_ctx->callback) {
+      tcp_ctx->callback(CLIENT_DISCONNECTED, c_info, NULL, 0);
       memset(c_info, 0, sizeof(client_info));
       tcp_ctx->curr_idx--;
     }
@@ -258,8 +249,8 @@ int do_receive(tcp_context *tcp_ctx, int idx) {
   }
 
   // client data received
-  if (tcp_ctx->events.on_received) {
-    tcp_ctx->events.on_received(c_info, tcp_ctx->receive_buffer, bytes);
+  if (tcp_ctx->callback) {
+    tcp_ctx->callback(CLIENT_DATA_RECEIVED, c_info, tcp_ctx->receive_buffer, bytes);
   }
 
   return 0;
@@ -295,8 +286,8 @@ int socev_service(void *ctx, int timeout_ms) {
         // process outbound data
         if ((c_info->pfd->events & POLLOUT) &&
             (c_info->pfd->revents & POLLOUT)) {
-          if (tcp_ctx->events.on_client_writable) {
-            tcp_ctx->events.on_client_writable(c_info);
+          if (tcp_ctx->callback) {
+            tcp_ctx->callback(CLIENT_WRITABLE, c_info, NULL, 0);
           }
 
           // clear pollout request of the client
