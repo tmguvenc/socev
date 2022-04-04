@@ -1,4 +1,5 @@
 #include "tcp_context.h"
+#include "utils.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <malloc.h>
@@ -6,8 +7,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/timerfd.h>
+#include <time.h>
 #include <unistd.h>
-#include "utils.h"
 
 #define INTERNAL_BUFFER_SIZE (64 * 1024)
 
@@ -15,10 +17,12 @@ typedef struct {
   unsigned short port;
   char ip[16];
   int fd;
+  int timer_fd;
   struct pollfd *pfd;
+  struct pollfd *timer_pfd;
 } client_info;
 
-const char *socev_get_connected_client_ip(void *c_info) {
+const char *socev_get_client_ip(void *c_info) {
   if (c_info) {
     client_info *inf = (client_info *)c_info;
     return inf->ip;
@@ -26,7 +30,7 @@ const char *socev_get_connected_client_ip(void *c_info) {
   return NULL;
 }
 
-unsigned short socev_get_connected_client_port(void *c_info) {
+unsigned short socev_get_client_port(void *c_info) {
   if (c_info) {
     client_info *inf = (client_info *)c_info;
     return inf->port;
@@ -69,7 +73,7 @@ void *socev_create_tcp_context(tcp_context_params params) {
   ctx->callback = params.callback;
 
   ctx->fd = create_socket(params.port);
-  if(ctx->fd == -1) {
+  if (ctx->fd == -1) {
     fprintf(stderr, "socket create failed\n");
     socev_destroy_tcp_context(ctx);
     return NULL;
@@ -90,26 +94,18 @@ void *socev_create_tcp_context(tcp_context_params params) {
   // clear client info list
   memset(ctx->client_info_list, 0, ctx->max_client_count * sizeof(client_info));
 
-  // set all client fds to -1
+  // set all client fds and their corresponding timer fds to -1
   for (unsigned int idx = 0; idx < ctx->max_client_count; ++idx) {
     ctx->client_info_list[idx].fd = -1;
+    ctx->client_info_list[idx].timer_fd = -1;
   }
 
-  ctx->fd_list = (struct pollfd *)malloc(
-      (ctx->max_client_count + 1) * // +1 is for the listening fd
-      sizeof(struct pollfd));
-
+  // create fd list for socket file descriptors
+  ctx->fd_list = create_fd_list(ctx->max_client_count + 1);
   if (!ctx->fd_list) {
-    fprintf(
-        stderr,
-        "socev_create_tcp_context err: cannot allocate memory for %d pollfd\n",
-        ctx->max_client_count);
     socev_destroy_tcp_context(ctx);
     return NULL;
   }
-
-  // clear pollfd list
-  memset(ctx->fd_list, 0, (ctx->max_client_count + 1) * sizeof(struct pollfd));
 
   // 1st pollfd is for the listening fd
   ctx->curr_idx = 0;
@@ -117,6 +113,7 @@ void *socev_create_tcp_context(tcp_context_params params) {
   ctx->fd_list[ctx->curr_idx].events = POLLIN | POLLERR | POLLHUP;
   ctx->curr_idx++;
 
+  // start listening incoming connections
   if (listen(ctx->fd, ctx->max_client_count) == -1) {
     fprintf(stderr, "socev_create_tcp_context err: %s\n", strerror(errno));
     socev_destroy_tcp_context(ctx);
@@ -137,8 +134,16 @@ void socev_destroy_tcp_context(void *ctx) {
         if (tcp_ctx->client_info_list[idx].fd != -1) {
           close(tcp_ctx->client_info_list[idx].fd);
         }
+        if (tcp_ctx->client_info_list[idx].timer_fd != -1) {
+          close(tcp_ctx->client_info_list[idx].timer_fd);
+        }
       }
       free(tcp_ctx->client_info_list);
+    }
+
+    // release pollfd list
+    if (tcp_ctx->fd_list) {
+      free(tcp_ctx->fd_list);
     }
 
     // release pollfd list
@@ -159,6 +164,12 @@ void socev_destroy_tcp_context(void *ctx) {
     // release tcp context
     free(tcp_ctx);
     tcp_ctx = NULL;
+  }
+}
+
+void socev_set_timer(void *c_info) {
+  if (c_info) {
+    client_info *inf = (client_info *)c_info;
   }
 }
 
@@ -187,12 +198,13 @@ int do_accept(tcp_context *tcp_ctx) {
 
   client_info *c_info = &tcp_ctx->client_info_list[tcp_ctx->curr_idx];
   c_info->fd = new_client_fd;
+  c_info->timer_fd = timerfd_create(CLOCK_REALTIME, 0);
   c_info->port = client_addr.sin_port;
   strcpy(c_info->ip, inet_ntoa(client_addr.sin_addr));
 
-  tcp_ctx->fd_list[tcp_ctx->curr_idx].fd = new_client_fd;
-  tcp_ctx->fd_list[tcp_ctx->curr_idx].events = POLLIN;
   c_info->pfd = &tcp_ctx->fd_list[tcp_ctx->curr_idx];
+  c_info->pfd->fd = new_client_fd;
+  c_info->pfd->events = POLLIN;
 
   if (tcp_ctx->callback) {
     tcp_ctx->callback(CLIENT_CONNECTED, c_info, NULL, 0);
@@ -220,6 +232,8 @@ int do_receive(tcp_context *tcp_ctx, int idx) {
   if (bytes == 0) {
     if (tcp_ctx->callback) {
       tcp_ctx->callback(CLIENT_DISCONNECTED, c_info, NULL, 0);
+      close(c_info->fd);
+      close(c_info->timer_fd);
       memset(c_info, 0, sizeof(client_info));
       tcp_ctx->curr_idx--;
     }
@@ -229,21 +243,26 @@ int do_receive(tcp_context *tcp_ctx, int idx) {
 
   // client data received
   if (tcp_ctx->callback) {
-    tcp_ctx->callback(CLIENT_DATA_RECEIVED, c_info, tcp_ctx->receive_buffer, bytes);
+    tcp_ctx->callback(CLIENT_DATA_RECEIVED, c_info, tcp_ctx->receive_buffer,
+                      bytes);
   }
 
   return 0;
 }
 
 int socev_write(void *c_info, const void *data, unsigned int len) {
-  int result;
-  if (c_info) {
-    client_info *inf = (client_info *)c_info;
-    if ((result = write(inf->fd, data, len)) == -1) {
-      fprintf(stderr, "socev_write err: %s\n", strerror(errno));
-      result = -1;
-    }
+  if (!c_info) {
+    fprintf(stderr, "socev_write err: invalid client info\n");
+    return -1;
   }
+
+  client_info *inf = (client_info *)c_info;
+  int result = write(inf->fd, data, len);
+
+  if (result == -1) {
+    fprintf(stderr, "socev_write err: %s\n", strerror(errno));
+  }
+
   return result;
 }
 

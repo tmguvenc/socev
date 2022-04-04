@@ -2,7 +2,9 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -54,4 +56,21 @@ int create_socket(unsigned short port) {
   }
 
   return socket_fd;
+}
+
+struct pollfd *create_fd_list(unsigned int count) {
+  struct pollfd *fd_list =
+      (struct pollfd *)malloc(count * sizeof(struct pollfd));
+
+  if (!fd_list) {
+    fprintf(stderr,
+            "create_fd_list err: cannot allocate memory for %d pollfd\n",
+            count);
+    return NULL;
+  }
+
+  // clear pollfd list
+  memset(fd_list, 0, count * sizeof(struct pollfd));
+
+  return fd_list;
 }
