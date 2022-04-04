@@ -16,6 +16,7 @@
 typedef struct {
   void (*on_client_connected)(void *c_info);
   void (*on_client_disconnected)(void *c_info);
+  void (*on_client_writable)(void *c_info);
   void (*on_received)(void *c_info, const void *in, const unsigned int len);
 } events;
 
@@ -54,6 +55,7 @@ void *socev_create_tcp_context(tcp_context_params params) {
   ctx->events.on_client_connected = params.on_client_connected;
   ctx->events.on_client_disconnected = params.on_client_disconnected;
   ctx->events.on_received = params.on_received;
+  ctx->events.on_client_writable = params.on_client_writable;
 
   ctx->port = params.port;
   ctx->fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -190,6 +192,13 @@ int set_socket_nonblocking(int fd) {
   return result;
 }
 
+void socev_callback_on_writable(void *c_info) {
+  if (c_info) {
+    client_info *inf = (client_info *)c_info;
+    inf->pfd->events |= POLLOUT;
+  }
+}
+
 int do_accept(tcp_context *tcp_ctx) {
   struct sockaddr_in client_addr;
   memset(&client_addr, 0, sizeof(struct sockaddr_in));
@@ -211,12 +220,14 @@ int do_accept(tcp_context *tcp_ctx) {
   c_info->port = client_addr.sin_port;
   strcpy(c_info->ip, inet_ntoa(client_addr.sin_addr));
 
+  tcp_ctx->fd_list[tcp_ctx->curr_idx].fd = new_client_fd;
+  tcp_ctx->fd_list[tcp_ctx->curr_idx].events = POLLIN;
+  c_info->pfd = &tcp_ctx->fd_list[tcp_ctx->curr_idx];
+
   if (tcp_ctx->events.on_client_connected) {
     tcp_ctx->events.on_client_connected(c_info);
   }
 
-  tcp_ctx->fd_list[tcp_ctx->curr_idx].fd = new_client_fd;
-  tcp_ctx->fd_list[tcp_ctx->curr_idx].events = POLLIN | POLLERR | POLLHUP;
   tcp_ctx->curr_idx++;
 
   return new_client_fd;
@@ -254,6 +265,18 @@ int do_receive(tcp_context *tcp_ctx, int idx) {
   return 0;
 }
 
+int socev_write(void *c_info, const void *data, unsigned int len) {
+  int result;
+  if (c_info) {
+    client_info *inf = (client_info *)c_info;
+    if ((result = write(inf->fd, data, len)) == -1) {
+      fprintf(stderr, "socev_write err: %s\n", strerror(errno));
+      result = -1;
+    }
+  }
+  return result;
+}
+
 int socev_service(void *ctx, int timeout_ms) {
   int result = -1;
 
@@ -268,23 +291,27 @@ int socev_service(void *ctx, int timeout_ms) {
 
     if (result > 0) {
       for (int idx = 1; idx < tcp_ctx->curr_idx; ++idx) {
-        struct pollfd *pfd = &tcp_ctx->fd_list[idx];
-        if (pfd->revents & POLLIN) {
+        client_info *c_info = &tcp_ctx->client_info_list[idx];
+        // process outbound data
+        if ((c_info->pfd->events & POLLOUT) &&
+            (c_info->pfd->revents & POLLOUT)) {
+          if (tcp_ctx->events.on_client_writable) {
+            tcp_ctx->events.on_client_writable(c_info);
+          }
+
+          // clear pollout request of the client
+          c_info->pfd->events &= ~POLLOUT;
+        }
+
+        // process inbound data
+        if (c_info->pfd->revents & POLLIN) {
           if (do_receive(tcp_ctx, idx) == -1) {
             fprintf(stderr, "do_receive failed\n");
           }
         }
-        if (pfd->revents & POLLERR) {
-          fprintf(stderr, "POLLERR\n");
-        }
-        if (pfd->revents & POLLHUP) {
-          fprintf(stderr, "POLLHUP\n");
-        }
-        // if (pfd->revents & POLLOUT) {
-        //   fprintf(stderr, "POLLOUT\n");
-        // }
       }
 
+      // handle incoming connection
       if (tcp_ctx->fd_list[0].revents & POLLIN) {
         if (do_accept(tcp_ctx) == -1) {
           fprintf(stderr, "do_accept failed\n");

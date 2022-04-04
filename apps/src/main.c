@@ -15,7 +15,18 @@ void on_client_disconnected(void *c_info) {
 
 void on_received(void *c_info, const void *in, const unsigned int len) {
   printf("received from [%s:%d]: %s\n", socev_get_connected_client_ip(c_info),
-         socev_get_connected_client_port(c_info), (const char* )in);
+         socev_get_connected_client_port(c_info), (const char *)in);
+  socev_callback_on_writable(c_info);
+}
+
+void on_client_writable(void *c_info) {
+  static char buffer[80];
+  memset(buffer, 0, sizeof(buffer));
+
+  int pos = sprintf(buffer, "answer to [%s:%d]",
+                    socev_get_connected_client_ip(c_info),
+                    socev_get_connected_client_port(c_info));
+  socev_write(c_info, buffer, pos);
 }
 
 static int g_interruped;
@@ -25,14 +36,14 @@ void signal_handler(int sig) { g_interruped = 1; }
 int main(int argc, char *argv[]) {
   signal(SIGINT, signal_handler);
 
-  tcp_context_params params;
-  memset(&params, 0, sizeof(params));
-
-  params.port = 9000;
-  params.max_client_count = 10;
-  params.on_client_connected = on_client_connected;
-  params.on_client_disconnected = on_client_disconnected;
-  params.on_received = on_received;
+  tcp_context_params params = {
+      .port = 9000,
+      .max_client_count = 10,
+      .on_client_connected = on_client_connected,
+      .on_client_disconnected = on_client_disconnected,
+      .on_received = on_received,
+      .on_client_writable = on_client_writable,
+  };
 
   void *ctx = socev_create_tcp_context(params);
 
