@@ -6,5 +6,7 @@
     "unistd.h": "c",
     "stdint.h": "c",
     "inet.h": "c"
-  }
+  },
+  "cmake.configureOnOpen": false,
+  "editor.defaultFormatter": "xaver.clang-format"
 }

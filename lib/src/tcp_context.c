@@ -1,4 +1,5 @@
 #include "tcp_context.h"
+#include "client_info.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -17,28 +18,6 @@ typedef struct {
   void (*on_client_disconnected)(void *c_info);
   void (*on_received)(void *c_info, const void *in, const unsigned int len);
 } events;
-
-typedef struct {
-  unsigned short port;
-  char ip[16];
-  int fd;
-} client_info;
-
-const char *socev_get_connected_client_ip(void *c_info) {
-  if (c_info) {
-    client_info *inf = (client_info *)c_info;
-    return inf->ip;
-  }
-  return NULL;
-}
-
-unsigned short socev_get_connected_client_port(void *c_info) {
-  if (c_info) {
-    client_info *inf = (client_info *)c_info;
-    return inf->port;
-  }
-  return 0;
-}
 
 typedef struct {
   int fd;
@@ -74,6 +53,7 @@ void *socev_create_tcp_context(tcp_context_params params) {
 
   ctx->events.on_client_connected = params.on_client_connected;
   ctx->events.on_client_disconnected = params.on_client_disconnected;
+  ctx->events.on_received = params.on_received;
 
   ctx->port = params.port;
   ctx->fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -235,6 +215,8 @@ int do_accept(tcp_context *tcp_ctx) {
     tcp_ctx->events.on_client_connected(c_info);
   }
 
+  tcp_ctx->fd_list[tcp_ctx->curr_idx].fd = new_client_fd;
+  tcp_ctx->fd_list[tcp_ctx->curr_idx].events = POLLIN | POLLERR | POLLHUP;
   tcp_ctx->curr_idx++;
 
   return new_client_fd;
@@ -242,6 +224,10 @@ int do_accept(tcp_context *tcp_ctx) {
 
 int do_receive(tcp_context *tcp_ctx, int idx) {
   client_info *c_info = &tcp_ctx->client_info_list[idx];
+
+  // clear the internal buffer
+  memset(tcp_ctx->receive_buffer, 0, INTERNAL_BUFFER_SIZE);
+
   ssize_t bytes =
       recv(c_info->fd, tcp_ctx->receive_buffer, INTERNAL_BUFFER_SIZE, 0);
   if (bytes == -1) {
@@ -249,6 +235,18 @@ int do_receive(tcp_context *tcp_ctx, int idx) {
     return -1;
   }
 
+  // client disconnected
+  if (bytes == 0) {
+    if (tcp_ctx->events.on_client_disconnected) {
+      tcp_ctx->events.on_client_disconnected(c_info);
+      memset(c_info, 0, sizeof(client_info));
+      tcp_ctx->curr_idx--;
+    }
+
+    return 0;
+  }
+
+  // client data received
   if (tcp_ctx->events.on_received) {
     tcp_ctx->events.on_received(c_info, tcp_ctx->receive_buffer, bytes);
   }
@@ -269,12 +267,6 @@ int socev_service(void *ctx, int timeout_ms) {
     }
 
     if (result > 0) {
-      if (tcp_ctx->fd_list[0].revents & POLLIN) {
-        if (do_accept(tcp_ctx) == -1) {
-          fprintf(stderr, "do_accept failed\n");
-        }
-      }
-
       for (int idx = 1; idx < tcp_ctx->curr_idx; ++idx) {
         struct pollfd *pfd = &tcp_ctx->fd_list[idx];
         if (pfd->revents & POLLIN) {
@@ -288,8 +280,14 @@ int socev_service(void *ctx, int timeout_ms) {
         if (pfd->revents & POLLHUP) {
           fprintf(stderr, "POLLHUP\n");
         }
-        if (pfd->revents & POLLOUT) {
-          fprintf(stderr, "POLLOUT\n");
+        // if (pfd->revents & POLLOUT) {
+        //   fprintf(stderr, "POLLOUT\n");
+        // }
+      }
+
+      if (tcp_ctx->fd_list[0].revents & POLLIN) {
+        if (do_accept(tcp_ctx) == -1) {
+          fprintf(stderr, "do_accept failed\n");
         }
       }
     }

@@ -1,18 +1,26 @@
 #include "stdio.h"
 #include "tcp_context.h"
-#include <string.h>
 #include <signal.h>
+#include <string.h>
 
-void on_client(void *c_info) {
+void on_client_connected(void *c_info) {
   printf("client connected: %s:%d\n", socev_get_connected_client_ip(c_info),
          socev_get_connected_client_port(c_info));
 }
 
+void on_client_disconnected(void *c_info) {
+  printf("client disconnected: %s:%d\n", socev_get_connected_client_ip(c_info),
+         socev_get_connected_client_port(c_info));
+}
+
+void on_received(void *c_info, const void *in, const unsigned int len) {
+  printf("received from [%s:%d]: %s\n", socev_get_connected_client_ip(c_info),
+         socev_get_connected_client_port(c_info), (const char* )in);
+}
+
 static int g_interruped;
 
-void signal_handler(int sig) {
-  g_interruped = 1;
-}
+void signal_handler(int sig) { g_interruped = 1; }
 
 int main(int argc, char *argv[]) {
   signal(SIGINT, signal_handler);
@@ -22,7 +30,9 @@ int main(int argc, char *argv[]) {
 
   params.port = 9000;
   params.max_client_count = 10;
-  params.on_client_connected = on_client;
+  params.on_client_connected = on_client_connected;
+  params.on_client_disconnected = on_client_disconnected;
+  params.on_received = on_received;
 
   void *ctx = socev_create_tcp_context(params);
 
