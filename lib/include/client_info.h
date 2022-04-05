@@ -1,24 +1,28 @@
 #ifndef LIB_CLIENT_INFO_H_
 #define LIB_CLIENT_INFO_H_
 
-struct pollfd;
+#include <poll.h>
 
-typedef struct {
+struct sockaddr_in;
+
+typedef struct ci {
   unsigned short port;
   char ip[16];
   int fd;
   int timer_fd;
-  struct pollfd *pfd;
-  struct pollfd *timer_pfd;
+  struct ci *next;
 } client_info;
 
-typedef struct {
-  client_info* cc_list;
-  unsigned int count;
-  unsigned int used_idx;
-} client_info_list;
+client_info *client_info_create(client_info **head, int client_fd,
+                                struct sockaddr_in *client_addr);
 
-client_info_list* client_info_list_create(unsigned int count);
-void client_info_list_destroy(client_info_list* list);
+void client_info_delete(client_info **head, int fd);
+
+typedef struct tag {
+  unsigned int count;
+  struct pollfd fd_list[100];
+} pollfd_list;
+
+pollfd_list client_info_pollfd_list(client_info **head);
 
 #endif // LIB_CLIENT_INFO_H_
