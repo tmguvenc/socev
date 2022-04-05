@@ -10,17 +10,9 @@
 #include <sys/timerfd.h>
 #include <time.h>
 #include <unistd.h>
+#include "client_info.h"
 
 #define INTERNAL_BUFFER_SIZE (64 * 1024)
-
-typedef struct {
-  unsigned short port;
-  char ip[16];
-  int fd;
-  int timer_fd;
-  struct pollfd *pfd;
-  struct pollfd *timer_pfd;
-} client_info;
 
 const char *socev_get_client_ip(void *c_info) {
   if (c_info) {
@@ -42,8 +34,10 @@ typedef struct {
   int fd;
   unsigned int max_client_count;
   client_info *client_info_list;
+
+  // current client idx
+  int cc_idx;
   struct pollfd *fd_list;
-  int curr_idx;
   char *receive_buffer;
   void (*callback)(const event_type ev, void *c_info, const void *in,
                    const unsigned int len);
@@ -101,17 +95,18 @@ void *socev_create_tcp_context(tcp_context_params params) {
   }
 
   // create fd list for socket file descriptors
-  ctx->fd_list = create_fd_list(ctx->max_client_count + 1);
+  // *2 is required to hold the timer fds in the same pollfd list
+  ctx->fd_list = create_fd_list((ctx->max_client_count + 1) * 2);
   if (!ctx->fd_list) {
     socev_destroy_tcp_context(ctx);
     return NULL;
   }
 
   // 1st pollfd is for the listening fd
-  ctx->curr_idx = 0;
-  ctx->fd_list[ctx->curr_idx].fd = ctx->fd;
-  ctx->fd_list[ctx->curr_idx].events = POLLIN | POLLERR | POLLHUP;
-  ctx->curr_idx++;
+  ctx->cc_idx = 0;
+  ctx->fd_list[ctx->cc_idx].fd = ctx->fd;
+  ctx->fd_list[ctx->cc_idx].events = POLLIN | POLLERR | POLLHUP;
+  ctx->cc_idx++;
 
   // start listening incoming connections
   if (listen(ctx->fd, ctx->max_client_count) == -1) {
@@ -196,21 +191,25 @@ int do_accept(tcp_context *tcp_ctx) {
     return -1;
   }
 
-  client_info *c_info = &tcp_ctx->client_info_list[tcp_ctx->curr_idx];
+  client_info *c_info = &tcp_ctx->client_info_list[tcp_ctx->cc_idx];
   c_info->fd = new_client_fd;
   c_info->timer_fd = timerfd_create(CLOCK_REALTIME, 0);
   c_info->port = client_addr.sin_port;
   strcpy(c_info->ip, inet_ntoa(client_addr.sin_addr));
 
-  c_info->pfd = &tcp_ctx->fd_list[tcp_ctx->curr_idx];
+  // set socket fd and its pollfd pointers
+  c_info->pfd = &tcp_ctx->fd_list[tcp_ctx->cc_idx++];
   c_info->pfd->fd = new_client_fd;
   c_info->pfd->events = POLLIN;
+
+  // set timer fd and its pollfd pointers
+  c_info->timer_pfd = &tcp_ctx->fd_list[tcp_ctx->cc_idx++];
+  c_info->timer_pfd->fd = c_info->timer_fd;
+  c_info->timer_pfd->events = POLLIN;
 
   if (tcp_ctx->callback) {
     tcp_ctx->callback(CLIENT_CONNECTED, c_info, NULL, 0);
   }
-
-  tcp_ctx->curr_idx++;
 
   return new_client_fd;
 }
@@ -235,7 +234,7 @@ int do_receive(tcp_context *tcp_ctx, int idx) {
       close(c_info->fd);
       close(c_info->timer_fd);
       memset(c_info, 0, sizeof(client_info));
-      tcp_ctx->curr_idx--;
+      tcp_ctx->cc_idx -= 2;
     }
 
     return 0;
@@ -271,7 +270,7 @@ int socev_service(void *ctx, int timeout_ms) {
 
   if (ctx) {
     tcp_context *tcp_ctx = (tcp_context *)(ctx);
-    result = poll(tcp_ctx->fd_list, tcp_ctx->curr_idx, timeout_ms);
+    result = poll(tcp_ctx->fd_list, tcp_ctx->cc_idx, timeout_ms);
 
     if (result == -1) {
       fprintf(stderr, "socev_service err: %s\n", strerror(errno));
@@ -279,8 +278,8 @@ int socev_service(void *ctx, int timeout_ms) {
     }
 
     if (result > 0) {
-      for (int idx = 1; idx < tcp_ctx->curr_idx; ++idx) {
-        client_info *c_info = &tcp_ctx->client_info_list[idx];
+      for (int idx = 1; idx < tcp_ctx->cc_idx; idx += 2) {
+        client_info *c_info = &tcp_ctx->client_info_list[idx / 2];
         // process outbound data
         if ((c_info->pfd->events & POLLOUT) &&
             (c_info->pfd->revents & POLLOUT)) {
@@ -292,9 +291,15 @@ int socev_service(void *ctx, int timeout_ms) {
           c_info->pfd->events &= ~POLLOUT;
         }
 
+        // process timer expired
+        if (c_info->timer_pfd->revents & POLLIN) {
+          fprintf(stderr, "timer expired for [%s:%d]\n", c_info->ip,
+                  c_info->port);
+        }
+
         // process inbound data
         if (c_info->pfd->revents & POLLIN) {
-          if (do_receive(tcp_ctx, idx) == -1) {
+          if (do_receive(tcp_ctx, idx / 2) == -1) {
             fprintf(stderr, "do_receive failed\n");
           }
         }
