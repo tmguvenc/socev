@@ -18,7 +18,7 @@ typedef struct ci {
 client_info *client_info_create(client_info **head, int client_fd,
                                 struct sockaddr_in *client_addr);
 
-void client_info_delete(client_info **head, int fd);
+void client_info_delete(client_info **head, client_info* ci);
 
 typedef struct tag {
   unsigned int count;

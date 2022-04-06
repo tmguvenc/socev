@@ -35,10 +35,10 @@ client_info *client_info_create(client_info **head, int client_fd,
   return new_node;
 }
 
-void client_info_delete(client_info **head, int fd) {
+void client_info_delete(client_info **head, client_info* ci) {
   client_info *curr = *head;
 
-  if (curr && curr->fd == fd) {
+  if (curr && curr->fd == ci->fd) {
     client_info *del = *head;
     *head = curr->next;
     free(del);
@@ -46,13 +46,13 @@ void client_info_delete(client_info **head, int fd) {
   }
 
   client_info *prev;
-  while (curr && curr->fd != fd) {
+  while (curr && curr->fd != ci->fd) {
     prev = curr;
     curr = curr->next;
   }
 
   if (curr == NULL) {
-    printf("%d not found\n", fd);
+    printf("%d not found\n", ci->fd);
     return;
   }
 
@@ -62,7 +62,7 @@ void client_info_delete(client_info **head, int fd) {
 
 void add_ci_to_fdlist(pollfd_list **list, client_info *ci) {
   pollfd_list *lst = *list;
-  
+
   ci->pfd = &lst->fd_list[lst->count++];
   ci->pfd->fd = ci->fd;
   ci->pfd->events = POLLIN;
@@ -72,29 +72,32 @@ void add_ci_to_fdlist(pollfd_list **list, client_info *ci) {
   ci->timer_pfd->events = POLLIN;
 }
 
+void swap(struct pollfd* pfd1, struct pollfd* pfd2) {
+  struct pollfd pfd;
+  memcpy(&pfd, pfd1, sizeof(struct pollfd));
+  memcpy(pfd1, pfd2, sizeof(struct pollfd));
+  memcpy(pfd2, &pfd, sizeof(struct pollfd));
+}
+
+void clear(struct pollfd** pfd) {
+  memset(*pfd, 0, sizeof(struct pollfd));
+}
+
 void del_ci_from_fdlist(pollfd_list **list, client_info *ci) {
   pollfd_list *lst = *list;
 
-  for (int i = 0; i < lst->count; i += 2) {
-    if (lst->fd_list[i].fd == ci->fd &&
-        lst->fd_list[i + 1].fd == ci->timer_fd) {
+  for (int i = 1; i < lst->count; i += 2) {
+    struct pollfd* pfd = &lst->fd_list[i];
+    struct pollfd* timer_pfd = &lst->fd_list[i + 1];
 
-      
+    if (pfd->fd == ci->fd && timer_pfd->fd == ci->timer_fd) {
+      clear(&pfd);
+      clear(&timer_pfd);
+      swap(pfd, &lst->fd_list[lst->count-2]);
+      swap(timer_pfd, &lst->fd_list[lst->count-1]);
+      break;
     }
   }
-}
 
-void client_info_pollfd_list(client_info **head, pollfd_list *list) {
-  if (list) {
-    client_info *curr = *head;
-    while (curr) {
-      curr->pfd = &list->fd_list[list->count++];
-      curr->timer_pfd = &list->fd_list[list->count++];
-      curr->pfd->fd = curr->fd;
-      curr->timer_pfd->fd = curr->timer_fd;
-      curr->pfd->events = POLLIN;
-      curr->timer_pfd->events = POLLIN;
-      curr = curr->next;
-    }
-  }
+  lst->count -= 2;
 }

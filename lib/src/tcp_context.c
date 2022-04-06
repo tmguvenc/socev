@@ -174,6 +174,7 @@ int do_receive(tcp_context *tcp_ctx, client_info *c_info) {
     if (tcp_ctx->callback) {
       tcp_ctx->callback(CLIENT_DISCONNECTED, c_info, NULL, 0);
       del_ci_from_fdlist(&tcp_ctx->pfd_list, c_info);
+      client_info_delete(&tcp_ctx->ci_list, c_info);
       close(c_info->fd);
       close(c_info->timer_fd);
       memset(c_info, 0, sizeof(client_info));
