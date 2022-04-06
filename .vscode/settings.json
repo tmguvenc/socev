@@ -5,7 +5,10 @@
     "cstdio": "c",
     "unistd.h": "c",
     "stdint.h": "c",
-    "inet.h": "c"
+    "inet.h": "c",
+    "in.h": "c",
+    "time.h": "c",
+    "linked_list.h": "c"
   },
   "cmake.configureOnOpen": false,
   "editor.defaultFormatter": "xaver.clang-format"
