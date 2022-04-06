@@ -19,12 +19,18 @@ static void callback(const event_type ev, void *c_info, const void *in,
   case CLIENT_DATA_RECEIVED:
     printf("received from [%s:%d]: %s\n", client_ip, port, (const char *)in);
     socev_callback_on_writable(c_info);
+    socev_set_timer(c_info, 1000000);
     break;
-  case CLIENT_WRITABLE:
+  case CLIENT_WRITABLE: {
     memset(buffer, 0, sizeof(buffer));
-    int pos = sprintf(buffer, "answer to [%s:%d]", client_ip, port);
+    int pos = sprintf(buffer, "here is your answer\n");
     socev_write(c_info, buffer, pos);
-    break;
+  } break;
+  case CLIENT_TIMER_EXPIRED: {
+    memset(buffer, 0, sizeof(buffer));
+    int pos = sprintf(buffer, "your time is up\n");
+    socev_write(c_info, buffer, pos);
+  } break;
   default:
     break;
   }

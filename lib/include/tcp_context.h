@@ -1,6 +1,8 @@
 #ifndef LIB_TCP_CONTEXT_H_
 #define LIB_TCP_CONTEXT_H_
 
+#include <stdint.h>
+
 typedef enum {
   CLIENT_CONNECTED = 0,
   CLIENT_DISCONNECTED = 1,
@@ -25,7 +27,7 @@ unsigned short socev_get_client_port(void *c_info);
 void socev_callback_on_writable(void *c_info);
 int socev_service(void *ctx, int timeout_ms);
 
-void socev_set_timer(void *c_info);
+void socev_set_timer(void *c_info, const uint64_t timeout_us);
 
 int socev_write(void *c_info, const void *data, unsigned int len);
 

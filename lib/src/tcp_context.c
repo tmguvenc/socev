@@ -116,10 +116,11 @@ void socev_destroy_tcp_context(void *ctx) {
   }
 }
 
-void socev_set_timer(void *c_info) {
+void socev_set_timer(void *c_info, const uint64_t timeout_us) {
   if (c_info) {
     client_info *inf = (client_info *)c_info;
     inf->timer_pfd->events |= POLLIN;
+    arm_timer(inf->timer_fd, timeout_us);
   }
 }
 
@@ -245,8 +246,10 @@ int socev_service(void *ctx, int timeout_ms) {
 
         // process timer expired
         if (c_info->timer_pfd->revents & POLLIN) {
-          fprintf(stderr, "timer expired for [%s:%d]\n", c_info->ip,
-                  c_info->port);
+          if (tcp_ctx->callback) {
+            tcp_ctx->callback(CLIENT_TIMER_EXPIRED, c_info, NULL, 0);
+          }
+          c_info->timer_pfd->events &= ~POLLIN;
         }
 
         // process inbound data
