@@ -69,7 +69,6 @@ void add_ci_to_fdlist(pollfd_list **list, client_info *ci) {
 
   ci->timer_pfd = &lst->fd_list[lst->count++];
   ci->timer_pfd->fd = ci->timer_fd;
-  ci->timer_pfd->events = POLLIN;
 }
 
 void swap(struct pollfd* pfd1, struct pollfd* pfd2) {
