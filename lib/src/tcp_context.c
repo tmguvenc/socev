@@ -56,7 +56,7 @@ void *socev_create_tcp_context(tcp_context_params params) {
 
   ctx->callback = params.callback;
 
-  ctx->fd = create_socket(params.port);
+  ctx->fd = create_listener_socket(params.port);
   if (ctx->fd == -1) {
     fprintf(stderr, "socket create failed\n");
     socev_destroy_tcp_context(ctx);

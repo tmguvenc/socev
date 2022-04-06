@@ -35,7 +35,7 @@ client_info *client_info_create(client_info **head, int client_fd,
   return new_node;
 }
 
-void client_info_delete(client_info **head, client_info* ci) {
+void client_info_delete(client_info **head, client_info *ci) {
   client_info *curr = *head;
 
   if (curr && curr->fd == ci->fd) {
@@ -71,29 +71,27 @@ void add_ci_to_fdlist(pollfd_list **list, client_info *ci) {
   ci->timer_pfd->fd = ci->timer_fd;
 }
 
-void swap(struct pollfd* pfd1, struct pollfd* pfd2) {
+void swap(struct pollfd *pfd1, struct pollfd *pfd2) {
   struct pollfd pfd;
   memcpy(&pfd, pfd1, sizeof(struct pollfd));
   memcpy(pfd1, pfd2, sizeof(struct pollfd));
   memcpy(pfd2, &pfd, sizeof(struct pollfd));
 }
 
-void clear(struct pollfd** pfd) {
-  memset(*pfd, 0, sizeof(struct pollfd));
-}
+void clear(struct pollfd **pfd) { memset(*pfd, 0, sizeof(struct pollfd)); }
 
 void del_ci_from_fdlist(pollfd_list **list, client_info *ci) {
   pollfd_list *lst = *list;
 
   for (int i = 1; i < lst->count; i += 2) {
-    struct pollfd* pfd = &lst->fd_list[i];
-    struct pollfd* timer_pfd = &lst->fd_list[i + 1];
+    struct pollfd *pfd = &lst->fd_list[i];
+    struct pollfd *timer_pfd = &lst->fd_list[i + 1];
 
     if (pfd->fd == ci->fd && timer_pfd->fd == ci->timer_fd) {
       clear(&pfd);
       clear(&timer_pfd);
-      swap(pfd, &lst->fd_list[lst->count-2]);
-      swap(timer_pfd, &lst->fd_list[lst->count-1]);
+      swap(pfd, &lst->fd_list[lst->count - 2]);
+      swap(timer_pfd, &lst->fd_list[lst->count - 1]);
       break;
     }
   }
