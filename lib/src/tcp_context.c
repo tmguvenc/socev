@@ -15,7 +15,7 @@
 
 const char *socev_get_client_ip(void *c_info) {
   if (c_info) {
-    client_info *inf = (client_info *)c_info;
+    ci_t *inf = (ci_t *)c_info;
     return inf->ip;
   }
   return NULL;
@@ -23,7 +23,7 @@ const char *socev_get_client_ip(void *c_info) {
 
 unsigned short socev_get_client_port(void *c_info) {
   if (c_info) {
-    client_info *inf = (client_info *)c_info;
+    ci_t *inf = (ci_t *)c_info;
     return inf->port;
   }
   return 0;
@@ -32,8 +32,7 @@ unsigned short socev_get_client_port(void *c_info) {
 typedef struct {
   int fd;
   unsigned int max_client_count;
-  client_info *ci_list;
-  pollfd_list *pfd_list;
+  ci_list_t *ci_list;
   char *receive_buffer;
   void (*callback)(const event_type ev, void *c_info, const void *in,
                    const unsigned int len);
@@ -63,9 +62,11 @@ void *socev_create_tcp_context(tcp_context_params params) {
     return NULL;
   }
 
-  ctx->pfd_list = (pollfd_list *)calloc(1, sizeof(pollfd_list));
-  ctx->pfd_list->fd_list[ctx->pfd_list->count].fd = ctx->fd;
-  ctx->pfd_list->fd_list[ctx->pfd_list->count++].events = POLLIN;
+  ctx->ci_list = ci_list_create(params.max_client_count);
+
+  // ctx->pfd_list = (pollfd_list *)calloc(1, sizeof(pollfd_list));
+  // ctx->pfd_list->fd_list[ctx->pfd_list->count].fd = ctx->fd;
+  // ctx->pfd_list->fd_list[ctx->pfd_list->count++].events = POLLIN;
 
   // start listening incoming connections
   if (listen(ctx->fd, ctx->max_client_count) == -1) {
@@ -82,18 +83,7 @@ void socev_destroy_tcp_context(void *ctx) {
     tcp_context *tcp_ctx = (tcp_context *)(ctx);
 
     // release client info list
-    if (tcp_ctx->ci_list) {
-      // iterate through the client fd list
-      for (unsigned int idx = 0; idx < tcp_ctx->max_client_count; ++idx) {
-        if (tcp_ctx->ci_list[idx].fd != -1) {
-          close(tcp_ctx->ci_list[idx].fd);
-        }
-        if (tcp_ctx->ci_list[idx].timer_fd != -1) {
-          close(tcp_ctx->ci_list[idx].timer_fd);
-        }
-      }
-      free(tcp_ctx->ci_list);
-    }
+    ci_list_destroy(tcp_ctx->ci_list);
 
     // close listening socket
     if (tcp_ctx->fd != -1) {
@@ -105,11 +95,6 @@ void socev_destroy_tcp_context(void *ctx) {
       free(tcp_ctx->receive_buffer);
     }
 
-    // free pollfd list
-    if (tcp_ctx->pfd_list) {
-      free(tcp_ctx->pfd_list);
-    }
-
     // release tcp context
     free(tcp_ctx);
     tcp_ctx = NULL;
@@ -118,16 +103,16 @@ void socev_destroy_tcp_context(void *ctx) {
 
 void socev_set_timer(void *c_info, const uint64_t timeout_us) {
   if (c_info) {
-    client_info *inf = (client_info *)c_info;
-    inf->timer_pfd->events |= POLLIN;
+    ci_t *inf = (ci_t *)c_info;
+    // inf->timer_pfd->events |= POLLIN;
     arm_timer(inf->timer_fd, timeout_us);
   }
 }
 
 void socev_callback_on_writable(void *c_info) {
   if (c_info) {
-    client_info *inf = (client_info *)c_info;
-    inf->pfd->events |= POLLOUT;
+    ci_t *inf = (ci_t *)c_info;
+    // inf->pfd->events |= POLLOUT;
   }
 }
 
@@ -147,10 +132,7 @@ int do_accept(tcp_context *tcp_ctx) {
     return -1;
   }
 
-  client_info *c_info =
-      client_info_create(&tcp_ctx->ci_list, new_client_fd, &client_addr);
-
-  add_ci_to_fdlist(&tcp_ctx->pfd_list, c_info);
+  ci_t *c_info = add_ci(&tcp_ctx->ci_list, new_client_fd, &client_addr);
 
   if (tcp_ctx->callback) {
     tcp_ctx->callback(CLIENT_CONNECTED, c_info, NULL, 0);
@@ -159,7 +141,7 @@ int do_accept(tcp_context *tcp_ctx) {
   return new_client_fd;
 }
 
-int do_receive(tcp_context *tcp_ctx, client_info *c_info) {
+int do_receive(tcp_context *tcp_ctx, ci_t *c_info) {
   // clear the internal buffer
   memset(tcp_ctx->receive_buffer, 0, INTERNAL_BUFFER_SIZE);
 
@@ -174,11 +156,6 @@ int do_receive(tcp_context *tcp_ctx, client_info *c_info) {
   if (bytes == 0) {
     if (tcp_ctx->callback) {
       tcp_ctx->callback(CLIENT_DISCONNECTED, c_info, NULL, 0);
-      del_ci_from_fdlist(&tcp_ctx->pfd_list, c_info);
-      client_info_delete(&tcp_ctx->ci_list, c_info);
-      close(c_info->fd);
-      close(c_info->timer_fd);
-      memset(c_info, 0, sizeof(client_info));
     }
 
     return 0;
@@ -199,7 +176,7 @@ int socev_write(void *c_info, const void *data, unsigned int len) {
     return -1;
   }
 
-  client_info *inf = (client_info *)c_info;
+  ci_t *inf = (ci_t *)c_info;
   int result = write(inf->fd, data, len);
 
   if (result == -1) {
@@ -231,7 +208,7 @@ int socev_service(void *ctx, int timeout_ms) {
       }
 
       // iterate through the connected client list
-      for (client_info *c_info = tcp_ctx->ci_list; c_info != NULL;
+      for (ci_t *c_info = tcp_ctx->ci_list; c_info != NULL;
            c_info = c_info->next) {
         // process outbound data
         if ((c_info->pfd->events & POLLOUT) &&

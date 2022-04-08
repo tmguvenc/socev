@@ -13,7 +13,7 @@ typedef enum {
 
 typedef struct {
   uint16_t port;
-  uint32_t max_client_count;
+  uint64_t max_client_count;
   void (*callback)(const event_type ev, void *c_info, const void *in,
                    const uint32_t len);
 } tcp_context_params;
