@@ -2,8 +2,6 @@
 extern "C" {
   #include "tcp_context.h"
 }
-#include "socev_test_class.h"
-
 TEST(tcp_context, create_destroy) {
   tcp_context_params params = {
     .port = 9000,
