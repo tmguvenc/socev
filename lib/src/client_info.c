@@ -13,9 +13,6 @@ ci_list_t *ci_list_create(const uint64_t capacity) {
     return NULL;
   }
 
-  // we'll add listener fd first.
-  ci_list->count = 1;
-
   ci_list->ci_lst = calloc(capacity, sizeof(ci_t));
   if (!ci_list->ci_lst) {
     free(ci_list);
@@ -30,6 +27,8 @@ ci_list_t *ci_list_create(const uint64_t capacity) {
     fprintf(stderr, "cannot create %lu pollfd(s)\n", capacity * 2 + 1);
     return NULL;
   }
+
+  return ci_list;
 }
 
 #define close_fd(fd)                                                           \
@@ -64,17 +63,14 @@ ci_t *add_ci(ci_list_t **list, const int fd, const struct sockaddr_in *addr) {
   }
 
   // get the current client idx
-  uint64_t idx = ci_list->count;
+  uint64_t idx = ci_list->count++;
 
   // select the client bucket
   ci_t *ci = &ci_list->ci_lst[idx];
 
   // select the corresponding pollfd buckets
-  struct pollfd *pfd = &ci_list->pfd_lst[idx];
-  struct pollfd *timer_pfd = &ci_list->pfd_lst[idx + 1];
-
-  // increment the current client count
-  ++ci_list->count;
+  struct pollfd *pfd = &ci_list->pfd_lst[idx * 2 + 1];
+  struct pollfd *timer_pfd = &ci_list->pfd_lst[idx * 2 + 2];
 
   // assign the socket and timer file descriptors.
   ci->fd = fd;
@@ -90,7 +86,7 @@ ci_t *add_ci(ci_list_t **list, const int fd, const struct sockaddr_in *addr) {
 
   // set the timer pollfd
   timer_pfd->fd = ci->timer_fd;
-  timer_pfd->fd = POLLIN;
+  timer_pfd->events = POLLIN;
 
   return ci;
 }
