@@ -95,7 +95,7 @@ ci_t *add_ci(ci_list_t **list, const int fd, const struct sockaddr_in *addr) {
 }
 
 int get_idx(const ci_list_t *list, const int fd) {
-  for (int idx = 1; idx < list->count; ++idx) {
+  for (int idx = 0; idx < list->count; ++idx) {
     ci_t *tmp_ci = &list->ci_lst[idx];
     if (tmp_ci->fd == fd) {
       return idx;
