@@ -13,19 +13,19 @@ typedef enum {
 
 typedef struct {
   uint16_t port;
-  uint32_t max_client_count;
+  uint64_t max_client_count;
   void (*callback)(const event_type ev, void *c_info, const void *in,
                    const uint32_t len);
 } tcp_context_params;
 
 void *socev_create_tcp_context(tcp_context_params params);
-void socev_destroy_tcp_context(void *ctx);
+void socev_destroy_tcp_context(void *tcp_ctx);
 
 const char *socev_get_client_ip(void *c_info);
 uint16_t socev_get_client_port(void *c_info);
 
 void socev_callback_on_writable(void *c_info);
-int socev_service(void *ctx, int timeout_ms);
+int socev_service(void *tcp_ctx, int timeout_ms);
 
 void socev_set_timer(void *c_info, const uint64_t timeout_us);
 

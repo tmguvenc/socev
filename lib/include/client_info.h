@@ -2,6 +2,7 @@
 #define LIB_CLIENT_INFO_H_
 
 #include <poll.h>
+#include <stdint.h>
 
 struct sockaddr_in;
 
@@ -10,22 +11,20 @@ typedef struct ci {
   char ip[16];
   int fd;
   int timer_fd;
-  struct ci *next;
-  struct pollfd *pfd;
-  struct pollfd *timer_pfd;
-} client_info;
+  struct pollfd* pfd;
+  struct pollfd* timer_pfd;
+} ci_t;
 
-client_info *client_info_create(client_info **head, int client_fd,
-                                struct sockaddr_in *client_addr);
-
-void client_info_delete(client_info **head, client_info *ci);
-
-typedef struct tag {
+typedef struct ci_list {
+  ci_t* ci_lst;
+  struct pollfd *pfd_lst;
   unsigned int count;
-  struct pollfd fd_list[100];
-} pollfd_list;
+} ci_list_t;
 
-void add_ci_to_fdlist(pollfd_list **list, client_info *ci);
-void del_ci_from_fdlist(pollfd_list **list, client_info *ci);
+ci_list_t* ci_list_create(const uint64_t capacity);
+void ci_list_destroy(ci_list_t* ci_list);
+
+ci_t* add_ci(ci_list_t** list, const int fd, const struct sockaddr_in* addr);
+int del_ci(ci_list_t** list, const int fd);
 
 #endif // LIB_CLIENT_INFO_H_
