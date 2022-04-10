@@ -137,18 +137,24 @@ int del_ci(ci_list_t **list, const int fd) {
   // select the last ci
   ci_t *ci_lst = &ci_list->ci_lst[ci_list->count - 1];
 
-  // select the pollfds at idx
-  struct pollfd *pfd_idx = &ci_list->pfd_lst[idx];
-  struct pollfd *timer_pfd_idx = &ci_list->pfd_lst[idx + 1];
-
-  // select the last pollfds
-  struct pollfd *pfd_lst = &ci_list->pfd_lst[ci_list->count * 2];
-  struct pollfd *timer_pfd_lst = &ci_list->pfd_lst[ci_list->count * 2 + 1];
-
   if (ci_idx != ci_lst) {
+    // select the pollfds at idx
+    struct pollfd *pfd_idx = &ci_list->pfd_lst[idx];
+    struct pollfd *timer_pfd_idx = &ci_list->pfd_lst[idx + 1];
+
+    // select the last pollfds
+    struct pollfd *pfd_lst = &ci_list->pfd_lst[ci_list->count * 2 - 1];
+    struct pollfd *timer_pfd_lst = &ci_list->pfd_lst[ci_list->count * 2];
     swap_ci(ci_idx, ci_lst);
     swap_pfd(pfd_idx, pfd_lst);
     swap_pfd(timer_pfd_idx, timer_pfd_lst);
+
+    ci_lst->pfd = pfd_lst;
+    ci_lst->timer_pfd = timer_pfd_lst;
+
+    memset(ci_idx, 0, sizeof(ci_t));
+    memset(pfd_idx, 0, sizeof(struct pollfd));
+    memset(timer_pfd_idx, 0, sizeof(struct pollfd));
   }
 
   --ci_list->count;
