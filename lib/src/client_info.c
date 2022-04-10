@@ -88,6 +88,9 @@ ci_t *add_ci(ci_list_t **list, const int fd, const struct sockaddr_in *addr) {
   timer_pfd->fd = ci->timer_fd;
   timer_pfd->events = POLLIN;
 
+  ci->pfd = pfd;
+  ci->timer_pfd = timer_pfd;
+
   return ci;
 }
 

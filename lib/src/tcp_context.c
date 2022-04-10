@@ -33,7 +33,7 @@ typedef struct {
   int fd;
   unsigned int max_client_count;
   ci_list_t *ci_list;
-  char *receive_buffer;
+  char *recv_buf;
   void (*callback)(const event_type ev, void *c_info, const void *in,
                    const unsigned int len);
 } tcp_context;
@@ -46,8 +46,8 @@ void *socev_create_tcp_context(tcp_context_params params) {
     return NULL;
   }
 
-  ctx->receive_buffer = (char *)calloc(1, INTERNAL_BUFFER_SIZE);
-  if (!ctx->receive_buffer) {
+  ctx->recv_buf = (char *)calloc(1, INTERNAL_BUFFER_SIZE);
+  if (!ctx->recv_buf) {
     fprintf(stderr, "socev_create_tcp_context err: %s\n", strerror(errno));
     socev_destroy_tcp_context(ctx);
     return NULL;
@@ -77,33 +77,33 @@ void *socev_create_tcp_context(tcp_context_params params) {
   return ctx;
 }
 
-void socev_destroy_tcp_context(void *ctx) {
-  if (!ctx) {
-    tcp_context *tcp_ctx = (tcp_context *)(ctx);
+void socev_destroy_tcp_context(void *tcp_ctx) {
+  if (!tcp_ctx) {
+    tcp_context *ctx = (tcp_context *)(tcp_ctx);
 
     // release client info list
-    ci_list_destroy(tcp_ctx->ci_list);
+    ci_list_destroy(ctx->ci_list);
 
     // close listening socket
-    if (tcp_ctx->fd != -1) {
-      close(tcp_ctx->fd);
+    if (ctx->fd != -1) {
+      close(ctx->fd);
     }
 
     // free receive buffer
-    if (tcp_ctx->receive_buffer) {
-      free(tcp_ctx->receive_buffer);
+    if (ctx->recv_buf) {
+      free(ctx->recv_buf);
     }
 
     // release tcp context
-    free(tcp_ctx);
-    tcp_ctx = NULL;
+    free(ctx);
+    ctx = NULL;
   }
 }
 
 void socev_set_timer(void *c_info, const uint64_t timeout_us) {
   if (c_info) {
     ci_t *inf = (ci_t *)c_info;
-    // inf->timer_pfd->events |= POLLIN;
+    inf->timer_pfd->events |= POLLIN;
     arm_timer(inf->timer_fd, timeout_us);
   }
 }
@@ -111,41 +111,39 @@ void socev_set_timer(void *c_info, const uint64_t timeout_us) {
 void socev_callback_on_writable(void *c_info) {
   if (c_info) {
     ci_t *inf = (ci_t *)c_info;
-    // inf->pfd->events |= POLLOUT;
+    inf->pfd->events |= POLLOUT;
   }
 }
 
-int do_accept(tcp_context *tcp_ctx) {
+int do_accept(tcp_context *ctx) {
   struct sockaddr_in client_addr;
   memset(&client_addr, 0, sizeof(struct sockaddr_in));
   socklen_t size = sizeof(struct sockaddr_in);
 
-  int new_client_fd =
-      accept(tcp_ctx->fd, (struct sockaddr *)(&client_addr), &size);
-  if (new_client_fd == -1) {
+  int new_fd = accept(ctx->fd, (struct sockaddr *)(&client_addr), &size);
+  if (new_fd == -1) {
     fprintf(stderr, "do_accept err: %s\n", strerror(errno));
     return -1;
   }
 
-  if (set_socket_nonblocking(new_client_fd) == -1) {
+  if (set_socket_nonblocking(new_fd) == -1) {
     return -1;
   }
 
-  ci_t *c_info = add_ci(&tcp_ctx->ci_list, new_client_fd, &client_addr);
+  ci_t *c_info = add_ci(&ctx->ci_list, new_fd, &client_addr);
 
-  if (tcp_ctx->callback) {
-    tcp_ctx->callback(CLIENT_CONNECTED, c_info, NULL, 0);
+  if (ctx->callback) {
+    ctx->callback(CLIENT_CONNECTED, c_info, NULL, 0);
   }
 
-  return new_client_fd;
+  return new_fd;
 }
 
-int do_receive(tcp_context *tcp_ctx, ci_t *c_info) {
+int do_receive(tcp_context *ctx, ci_t *c_info) {
   // clear the internal buffer
-  memset(tcp_ctx->receive_buffer, 0, INTERNAL_BUFFER_SIZE);
+  memset(ctx->recv_buf, 0, INTERNAL_BUFFER_SIZE);
 
-  ssize_t bytes =
-      recv(c_info->fd, tcp_ctx->receive_buffer, INTERNAL_BUFFER_SIZE, 0);
+  ssize_t bytes = recv(c_info->fd, ctx->recv_buf, INTERNAL_BUFFER_SIZE, 0);
   if (bytes == -1) {
     fprintf(stderr, "do_receive err: %s\n", strerror(errno));
     return -1;
@@ -153,17 +151,16 @@ int do_receive(tcp_context *tcp_ctx, ci_t *c_info) {
 
   // client disconnected
   if (bytes == 0) {
-    if (tcp_ctx->callback) {
-      tcp_ctx->callback(CLIENT_DISCONNECTED, c_info, NULL, 0);
+    if (ctx->callback) {
+      ctx->callback(CLIENT_DISCONNECTED, c_info, NULL, 0);
     }
 
     return -2;
   }
 
   // client data received
-  if (tcp_ctx->callback) {
-    tcp_ctx->callback(CLIENT_DATA_RECEIVED, c_info, tcp_ctx->receive_buffer,
-                      bytes);
+  if (ctx->callback) {
+    ctx->callback(CLIENT_DATA_RECEIVED, c_info, ctx->recv_buf, bytes);
   }
 
   return 0;

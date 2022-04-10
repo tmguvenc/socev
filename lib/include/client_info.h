@@ -11,6 +11,8 @@ typedef struct ci {
   char ip[16];
   int fd;
   int timer_fd;
+  struct pollfd* pfd;
+  struct pollfd* timer_pfd;
 } ci_t;
 
 typedef struct ci_list {
