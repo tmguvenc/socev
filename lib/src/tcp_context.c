@@ -182,14 +182,14 @@ int socev_write(void *c_info, const void *data, unsigned int len) {
   return result;
 }
 
-int socev_service(void *ctx, int timeout_ms) {
+int socev_service(void *tcp_ctx, int timeout_ms) {
   int result = -1;
 
-  if (ctx) {
-    tcp_context *tcp_ctx = (tcp_context *)(ctx);
-    const size_t fd_cnt = tcp_ctx->ci_list->count * 2 + 1;
+  if (tcp_ctx) {
+    tcp_context *ctx = (tcp_context *)(tcp_ctx);
+    const size_t fd_cnt = ctx->ci_list->count * 2 + 1;
 
-    result = poll(tcp_ctx->ci_list->pfd_lst, fd_cnt, timeout_ms);
+    result = poll(ctx->ci_list->pfd_lst, fd_cnt, timeout_ms);
 
     if (result == -1) {
       fprintf(stderr, "socev_service err: %s\n", strerror(errno));
@@ -197,12 +197,12 @@ int socev_service(void *ctx, int timeout_ms) {
     }
 
     if (result > 0) {
-      ci_list_t *ci_list = tcp_ctx->ci_list;
+      ci_list_t *ci_list = ctx->ci_list;
       struct pollfd *pfd_lst = ci_list->pfd_lst;
 
       // handle incoming connection
       if (pfd_lst[0].revents & POLLIN) {
-        if (do_accept(tcp_ctx) == -1) {
+        if (do_accept(ctx) == -1) {
           fprintf(stderr, "do_accept failed\n");
         }
       }
@@ -215,8 +215,8 @@ int socev_service(void *ctx, int timeout_ms) {
 
         // process outbound data
         if ((pfd->events & POLLOUT) && (pfd->revents & POLLOUT)) {
-          if (tcp_ctx->callback) {
-            tcp_ctx->callback(CLIENT_WRITABLE, c_info, NULL, 0);
+          if (ctx->callback) {
+            ctx->callback(CLIENT_WRITABLE, c_info, NULL, 0);
           }
 
           // clear pollout request of the client
@@ -225,15 +225,15 @@ int socev_service(void *ctx, int timeout_ms) {
 
         // process timer expired
         if (timer_pfd->revents & POLLIN) {
-          if (tcp_ctx->callback) {
-            tcp_ctx->callback(CLIENT_TIMER_EXPIRED, c_info, NULL, 0);
+          if (ctx->callback) {
+            ctx->callback(CLIENT_TIMER_EXPIRED, c_info, NULL, 0);
           }
           timer_pfd->events &= ~POLLIN;
         }
 
         // process inbound data
         if (pfd->revents & POLLIN) {
-          const int recv_res = do_receive(tcp_ctx, c_info);
+          const int recv_res = do_receive(ctx, c_info);
           if (recv_res == -1) {
             // handle receive error
             fprintf(stderr, "do_receive failed\n");
@@ -241,6 +241,7 @@ int socev_service(void *ctx, int timeout_ms) {
             // handle disconnected client
             close(c_info->fd);
             close(c_info->timer_fd);
+            del_ci(&ctx->ci_list, c_info->fd);
           }
         }
       }
