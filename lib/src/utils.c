@@ -29,7 +29,7 @@ int set_socket_nonblocking(int fd) {
   return result;
 }
 
-int create_listener_socket(unsigned short port) {
+int create_listener_socket(uint16_t port) {
   int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (socket_fd == -1) {
     fprintf(stderr, "create_listener_socket err: %s\n", strerror(errno));
@@ -61,7 +61,7 @@ int create_listener_socket(unsigned short port) {
   return socket_fd;
 }
 
-struct pollfd* create_fd_list(unsigned int count) {
+struct pollfd* create_fd_list(uint32_t count) {
   struct pollfd* fd_list =
       (struct pollfd*)malloc(count * sizeof(struct pollfd));
 

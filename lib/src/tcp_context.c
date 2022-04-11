@@ -23,7 +23,7 @@ const char* socev_get_client_ip(void* c_info) {
   return NULL;
 }
 
-unsigned short socev_get_client_port(void* c_info) {
+uint16_t socev_get_client_port(void* c_info) {
   if (c_info) {
     ci_t* inf = (ci_t*)c_info;
     return inf->port;
@@ -170,7 +170,7 @@ int do_receive(tcp_context* ctx, ci_t* c_info) {
   return 0;
 }
 
-int socev_write(void* c_info, const void* data, unsigned int len) {
+int socev_write(void* c_info, const void* data, uint32_t len) {
   if (!c_info) {
     fprintf(stderr, "socev_write err: invalid client info\n");
     return -1;

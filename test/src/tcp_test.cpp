@@ -2,12 +2,15 @@
 extern "C" {
 #include "tcp_context.h"
 }
+
+#include <cstdint>
+
 TEST(tcp_context, create_destroy) {
   tcp_context_params params = {
       .port = 9000,
       .max_client_count = 2,
       .callback = [](const event_type ev, void* c_info, const void* in,
-                     const unsigned int len) {}};
+                     const uint32_t len) {}};
 
   auto ctx = socev_create_tcp_context(params);
   ASSERT_NE(ctx, nullptr);

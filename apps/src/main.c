@@ -1,15 +1,16 @@
 #include <signal.h>
 #include <string.h>
 
-#include "stdio.h"
+#include <stdio.h>
+#include <stdint.h>
 #include "tcp_context.h"
 
 static char buffer[80];
 
 static void callback(const event_type ev, void* c_info, const void* in,
-                     const unsigned int len) {
-  const char * client_ip = socev_get_client_ip(c_info);
-  const unsigned short port = socev_get_client_port(c_info);
+                     const uint32_t len) {
+  const char* client_ip = socev_get_client_ip(c_info);
+  const uint16_t port = socev_get_client_port(c_info);
   switch (ev) {
     case CLIENT_CONNECTED:
       printf("client connected: %s:%d\n", client_ip, port);
