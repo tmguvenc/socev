@@ -75,7 +75,7 @@ ci_t *add_ci(ci_list_t **list, const int fd, const struct sockaddr_in *addr) {
 
   const uint32_t avail_idx = get_empty_idx(ci_list);
 
-  if(avail_idx >= ci_list->count) {
+  if (avail_idx >= ci_list->count) {
     ci_list->count++;
   }
 
