@@ -55,6 +55,17 @@ void ci_list_destroy(ci_list_t *ci_list) {
   }
 }
 
+uint32_t get_empty_idx(const ci_list_t *list) {
+  uint32_t idx = 0;
+  for (; idx < list->count; ++idx) {
+    ci_t *tmp_ci = &list->ci_lst[idx];
+    if (tmp_ci->fd == 0) {
+      return idx;
+    }
+  }
+  return idx;
+}
+
 ci_t *add_ci(ci_list_t **list, const int fd, const struct sockaddr_in *addr) {
   ci_list_t *ci_list = *list;
   if (!ci_list) {
@@ -62,15 +73,18 @@ ci_t *add_ci(ci_list_t **list, const int fd, const struct sockaddr_in *addr) {
     return NULL;
   }
 
-  // get the current client idx
-  uint64_t idx = ci_list->count++;
+  const uint32_t avail_idx = get_empty_idx(ci_list);
+
+  if(avail_idx >= ci_list->count) {
+    ci_list->count++;
+  }
 
   // select the client bucket
-  ci_t *ci = &ci_list->ci_lst[idx];
+  ci_t *ci = &ci_list->ci_lst[avail_idx];
 
   // select the corresponding pollfd buckets
-  struct pollfd *pfd = &ci_list->pfd_lst[idx * 2 + 1];
-  struct pollfd *timer_pfd = &ci_list->pfd_lst[idx * 2 + 2];
+  struct pollfd *pfd = &ci_list->pfd_lst[avail_idx * 2 + 1];
+  struct pollfd *timer_pfd = &ci_list->pfd_lst[avail_idx * 2 + 2];
 
   // assign the socket and timer file descriptors.
   ci->fd = fd;
@@ -104,20 +118,6 @@ int get_idx(const ci_list_t *list, const int fd) {
   return -1;
 }
 
-void swap_ci(ci_t *ci_1, ci_t *ci_2) {
-  ci_t temp;
-  memcpy(&temp, ci_1, sizeof(ci_t));
-  memcpy(ci_1, ci_2, sizeof(ci_t));
-  memcpy(ci_2, &temp, sizeof(ci_t));
-}
-
-void swap_pfd(struct pollfd *pfd_1, struct pollfd *pfd_2) {
-  struct pollfd temp;
-  memcpy(&temp, pfd_1, sizeof(struct pollfd));
-  memcpy(pfd_1, pfd_2, sizeof(struct pollfd));
-  memcpy(pfd_2, &temp, sizeof(struct pollfd));
-}
-
 int del_ci(ci_list_t **list, const int fd) {
   ci_list_t *ci_list = *list;
   if (!ci_list) {
@@ -134,30 +134,13 @@ int del_ci(ci_list_t **list, const int fd) {
   // select the ci at idx
   ci_t *ci_idx = &ci_list->ci_lst[idx];
 
-  // select the last ci
-  ci_t *ci_lst = &ci_list->ci_lst[ci_list->count - 1];
+  // select the pollfds at idx
+  struct pollfd *pfd_idx = &ci_list->pfd_lst[idx + 1];
+  struct pollfd *timer_pfd_idx = &ci_list->pfd_lst[idx + 2];
 
-  if (ci_idx != ci_lst) {
-    // select the pollfds at idx
-    struct pollfd *pfd_idx = &ci_list->pfd_lst[idx];
-    struct pollfd *timer_pfd_idx = &ci_list->pfd_lst[idx + 1];
-
-    // select the last pollfds
-    struct pollfd *pfd_lst = &ci_list->pfd_lst[ci_list->count * 2 - 1];
-    struct pollfd *timer_pfd_lst = &ci_list->pfd_lst[ci_list->count * 2];
-    swap_ci(ci_idx, ci_lst);
-    swap_pfd(pfd_idx, pfd_lst);
-    swap_pfd(timer_pfd_idx, timer_pfd_lst);
-
-    ci_lst->pfd = pfd_lst;
-    ci_lst->timer_pfd = timer_pfd_lst;
-
-    memset(ci_idx, 0, sizeof(ci_t));
-    memset(pfd_idx, 0, sizeof(struct pollfd));
-    memset(timer_pfd_idx, 0, sizeof(struct pollfd));
-  }
-
-  --ci_list->count;
+  memset(ci_idx, 0, sizeof(ci_t));
+  memset(pfd_idx, 0, sizeof(struct pollfd));
+  memset(timer_pfd_idx, 0, sizeof(struct pollfd));
 
   return 0;
 }

@@ -7,7 +7,7 @@
 struct sockaddr_in;
 
 typedef struct ci {
-  unsigned short port;
+  uint16_t port;
   char ip[16];
   int fd;
   int timer_fd;
@@ -18,7 +18,7 @@ typedef struct ci {
 typedef struct ci_list {
   ci_t* ci_lst;
   struct pollfd *pfd_lst;
-  unsigned int count;
+  uint32_t count;
 } ci_list_t;
 
 ci_list_t* ci_list_create(const uint64_t capacity);
