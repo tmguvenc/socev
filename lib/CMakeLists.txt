@@ -10,3 +10,5 @@ include_directories(include)
 set(SOCEV_LIB_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include" CACHE STRING "")
 
 add_library(${PROJECT_NAME} SHARED ${SRC_FILES})
+
+add_dependencies(${PROJECT_NAME} FormatSource)

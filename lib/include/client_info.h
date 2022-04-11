@@ -11,20 +11,23 @@ typedef struct ci {
   char ip[16];
   int fd;
   int timer_fd;
-  struct pollfd *pfd;
-  struct pollfd *timer_pfd;
+  struct pollfd* pfd;
+  struct pollfd* timer_pfd;
+  void* user_data;
+  uint64_t len;
 } ci_t;
 
 typedef struct ci_list {
-  ci_t *ci_lst;
-  struct pollfd *pfd_lst;
+  ci_t* ci_lst;
+  struct pollfd* pfd_lst;
   uint32_t count;
 } ci_list_t;
 
-ci_list_t *ci_list_create(const uint64_t capacity);
-void ci_list_destroy(ci_list_t *ci_list);
+ci_list_t* ci_list_create(const uint64_t capacity);
+void ci_list_destroy(ci_list_t* ci_list);
 
-ci_t *add_ci(ci_list_t **list, const int fd, const struct sockaddr_in *addr);
-int del_ci(ci_list_t **list, const int fd);
+ci_t* add_ci(ci_list_t** list, const int fd, const struct sockaddr_in* addr,
+             const uint64_t pcd_size);
+int del_ci(ci_list_t** list, const int fd);
 
-#endif // LIB_CLIENT_INFO_H_
+#endif  // LIB_CLIENT_INFO_H_

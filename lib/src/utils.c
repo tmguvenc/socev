@@ -1,4 +1,5 @@
 #include "utils.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -50,7 +51,7 @@ int create_listener_socket(unsigned short port) {
   server.sin_port = htons(port);
   server.sin_addr.s_addr = INADDR_ANY;
 
-  if (bind(socket_fd, (struct sockaddr *)(&server),
+  if (bind(socket_fd, (struct sockaddr*)(&server),
            sizeof(struct sockaddr_in)) == -1) {
     fprintf(stderr, "create_listener_socket err: %s\n", strerror(errno));
     close(socket_fd);
@@ -60,9 +61,9 @@ int create_listener_socket(unsigned short port) {
   return socket_fd;
 }
 
-struct pollfd *create_fd_list(unsigned int count) {
-  struct pollfd *fd_list =
-      (struct pollfd *)malloc(count * sizeof(struct pollfd));
+struct pollfd* create_fd_list(unsigned int count) {
+  struct pollfd* fd_list =
+      (struct pollfd*)malloc(count * sizeof(struct pollfd));
 
   if (!fd_list) {
     fprintf(stderr,
@@ -78,9 +79,9 @@ struct pollfd *create_fd_list(unsigned int count) {
 }
 
 struct timespec to_timespec(const int64_t interval_us) {
-  struct timespec ts = {.tv_sec = interval_us / 1e6,
-                        .tv_nsec =
-                            (interval_us - (interval_us / 1e6) * 1e6) * 1e6};
+  struct timespec ts = {
+      .tv_sec = interval_us / 1e6,
+      .tv_nsec = (interval_us - (interval_us / 1e6) * 1e6) * 1e6};
 
   return ts;
 }

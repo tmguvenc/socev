@@ -1,4 +1,5 @@
 #include "client_info.h"
+
 #include <arpa/inet.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,8 +7,8 @@
 #include <sys/timerfd.h>
 #include <unistd.h>
 
-ci_list_t *ci_list_create(const uint64_t capacity) {
-  ci_list_t *ci_list = calloc(1, sizeof(ci_list_t));
+ci_list_t* ci_list_create(const uint64_t capacity) {
+  ci_list_t* ci_list = calloc(1, sizeof(ci_list_t));
   if (!ci_list) {
     fprintf(stderr, "cannot create client info list\n");
     return NULL;
@@ -31,20 +32,24 @@ ci_list_t *ci_list_create(const uint64_t capacity) {
   return ci_list;
 }
 
-#define close_fd(fd)                                                           \
-  {                                                                            \
-    int fd_ = fd;                                                              \
-    if (fd_ != 0) {                                                            \
-      close(fd_);                                                              \
-    }                                                                          \
+#define close_fd(fd) \
+  {                  \
+    int fd_ = fd;    \
+    if (fd_ != 0) {  \
+      close(fd_);    \
+    }                \
   }
 
-void ci_list_destroy(ci_list_t *ci_list) {
+void ci_list_destroy(ci_list_t* ci_list) {
   if (ci_list) {
     if (ci_list->ci_lst) {
       for (size_t idx = 1; idx < ci_list->count; ++idx) {
-        close_fd(ci_list->ci_lst->fd);
-        close_fd(ci_list->ci_lst->timer_fd);
+        ci_t* ci = &ci_list->ci_lst[idx];
+        close_fd(ci->fd);
+        close_fd(ci->timer_fd);
+        if (ci->user_data) {
+          free(ci->user_data);
+        }
       }
       free(ci_list->ci_lst);
     }
@@ -55,10 +60,10 @@ void ci_list_destroy(ci_list_t *ci_list) {
   }
 }
 
-uint32_t get_empty_idx(const ci_list_t *list) {
+uint32_t get_empty_idx(const ci_list_t* list) {
   uint32_t idx = 0;
   for (; idx < list->count; ++idx) {
-    ci_t *tmp_ci = &list->ci_lst[idx];
+    ci_t* tmp_ci = &list->ci_lst[idx];
     if (tmp_ci->fd == 0) {
       return idx;
     }
@@ -66,8 +71,9 @@ uint32_t get_empty_idx(const ci_list_t *list) {
   return idx;
 }
 
-ci_t *add_ci(ci_list_t **list, const int fd, const struct sockaddr_in *addr) {
-  ci_list_t *ci_list = *list;
+ci_t* add_ci(ci_list_t** list, const int fd, const struct sockaddr_in* addr,
+             const uint64_t pcd_size) {
+  ci_list_t* ci_list = *list;
   if (!ci_list) {
     fprintf(stderr, "Invalid ci list\n");
     return NULL;
@@ -80,11 +86,14 @@ ci_t *add_ci(ci_list_t **list, const int fd, const struct sockaddr_in *addr) {
   }
 
   // select the client bucket
-  ci_t *ci = &ci_list->ci_lst[avail_idx];
+  ci_t* ci = &ci_list->ci_lst[avail_idx];
+
+  ci->len = pcd_size;
+  ci->user_data = malloc(ci->len);
 
   // select the corresponding pollfd buckets
-  struct pollfd *pfd = &ci_list->pfd_lst[avail_idx * 2 + 1];
-  struct pollfd *timer_pfd = &ci_list->pfd_lst[avail_idx * 2 + 2];
+  struct pollfd* pfd = &ci_list->pfd_lst[avail_idx * 2 + 1];
+  struct pollfd* timer_pfd = &ci_list->pfd_lst[avail_idx * 2 + 2];
 
   // assign the socket and timer file descriptors.
   ci->fd = fd;
@@ -108,9 +117,9 @@ ci_t *add_ci(ci_list_t **list, const int fd, const struct sockaddr_in *addr) {
   return ci;
 }
 
-int get_idx(const ci_list_t *list, const int fd) {
+int get_idx(const ci_list_t* list, const int fd) {
   for (int idx = 0; idx < list->count; ++idx) {
-    ci_t *tmp_ci = &list->ci_lst[idx];
+    ci_t* tmp_ci = &list->ci_lst[idx];
     if (tmp_ci->fd == fd) {
       return idx;
     }
@@ -118,8 +127,8 @@ int get_idx(const ci_list_t *list, const int fd) {
   return -1;
 }
 
-int del_ci(ci_list_t **list, const int fd) {
-  ci_list_t *ci_list = *list;
+int del_ci(ci_list_t** list, const int fd) {
+  ci_list_t* ci_list = *list;
   if (!ci_list) {
     fprintf(stderr, "Invalid ci list\n");
     return -1;
@@ -132,11 +141,15 @@ int del_ci(ci_list_t **list, const int fd) {
   }
 
   // select the ci at idx
-  ci_t *ci_idx = &ci_list->ci_lst[idx];
+  ci_t* ci_idx = &ci_list->ci_lst[idx];
+
+  if (ci_idx->user_data) {
+    free(ci_idx->user_data);
+  }
 
   // select the pollfds at idx
-  struct pollfd *pfd_idx = &ci_list->pfd_lst[idx + 1];
-  struct pollfd *timer_pfd_idx = &ci_list->pfd_lst[idx + 2];
+  struct pollfd* pfd_idx = &ci_list->pfd_lst[idx + 1];
+  struct pollfd* timer_pfd_idx = &ci_list->pfd_lst[idx + 2];
 
   memset(ci_idx, 0, sizeof(ci_t));
   memset(pfd_idx, 0, sizeof(struct pollfd));

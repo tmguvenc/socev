@@ -14,21 +14,24 @@ typedef enum {
 typedef struct {
   uint16_t port;
   uint64_t max_client_count;
-  void (*callback)(const event_type ev, void *c_info, const void *in,
+
+  /** @brief per client data size in bytes */
+  uint64_t pcd_size;
+  void (*callback)(const event_type ev, void* c_info, const void* in,
                    const uint32_t len);
 } tcp_context_params;
 
-void *socev_create_tcp_context(tcp_context_params params);
-void socev_destroy_tcp_context(void *tcp_ctx);
+void * socev_create_tcp_context(tcp_context_params params);
+void socev_destroy_tcp_context(void* tcp_ctx);
 
-const char *socev_get_client_ip(void *c_info);
-uint16_t socev_get_client_port(void *c_info);
+const char* socev_get_client_ip(void* c_info);
+uint16_t socev_get_client_port(void* c_info);
 
-void socev_callback_on_writable(void *c_info);
-int socev_service(void *tcp_ctx, int timeout_ms);
+void socev_callback_on_writable(void* c_info);
+int socev_service(void* tcp_ctx, int timeout_ms);
 
-void socev_set_timer(void *c_info, const uint64_t timeout_us);
+void socev_set_timer(void* c_info, const uint64_t timeout_us);
 
-int socev_write(void *c_info, const void *data, uint32_t len);
+int socev_write(void* c_info, const void* data, uint32_t len);
 
-#endif // LIB_TCP_CONTEXT_H_
+#endif  // LIB_TCP_CONTEXT_H_
