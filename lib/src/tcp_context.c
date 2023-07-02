@@ -1,56 +1,64 @@
 #include "tcp_context.h"
-#include "client_info.h"
-#include "utils.h"
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <malloc.h>
 #include <poll.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/timerfd.h>
 #include <unistd.h>
 
+#include "client.h"
+#include "client_list.h"
+#include "epoll_helper.h"
+#include "utils.h"
+
 #define INTERNAL_BUFFER_SIZE (64 * 1024)
-
-const char *socev_get_client_ip(void *c_info) {
-  if (c_info) {
-    ci_t *inf = (ci_t *)c_info;
-    return inf->ip;
-  }
-  return NULL;
-}
-
-unsigned short socev_get_client_port(void *c_info) {
-  if (c_info) {
-    ci_t *inf = (ci_t *)c_info;
-    return inf->port;
-  }
-  return 0;
-}
 
 typedef struct {
   int fd;
-  unsigned int max_client_count;
-  ci_list_t *ci_list;
-  char *recv_buf;
-  void (*callback)(const event_type ev, void *c_info, const void *in,
+  int efd;
+  char* recv_buf;
+  void (*callback)(const event_type ev, void* client, const void* in,
                    const unsigned int len);
+  void* client_list;
+  struct epoll_event* events;
 } tcp_context;
 
-void *socev_create_tcp_context(tcp_context_params params) {
-  tcp_context *ctx = (tcp_context *)calloc(1, sizeof(tcp_context));
+void* tcp_context_create(tcp_context_params params) {
+  tcp_context* ctx = (tcp_context*)calloc(1, sizeof(tcp_context));
 
   if (!ctx) {
-    fprintf(stderr, "socev_create_tcp_context err: cannot create context\n");
-    return NULL;
+    fprintf(stderr, "tcp_context_create err: cannot create context\n");
+    goto create_error;
   }
 
-  ctx->recv_buf = (char *)calloc(1, INTERNAL_BUFFER_SIZE);
+  ctx->recv_buf = (char*)calloc(1, INTERNAL_BUFFER_SIZE);
   if (!ctx->recv_buf) {
-    fprintf(stderr, "socev_create_tcp_context err: %s\n", strerror(errno));
-    socev_destroy_tcp_context(ctx);
-    return NULL;
+    fprintf(stderr, "tcp_context_create err: %s\n", strerror(errno));
+    goto create_error;
+  }
+
+  ctx->efd = epoll_create1(0);
+  if (ctx->efd == -1) {
+    fprintf(stderr, "epoll_create: %s\n", strerror(errno));
+    goto create_error;
+  }
+
+  ctx->client_list = client_list_create(params.max_client_count);
+  if (!ctx->client_list) {
+    fprintf(stderr, "tcp_context_create err: cannot create client list\n");
+    goto create_error;
+  }
+
+  ctx->events =
+      calloc(params.max_client_count * 2 + 1, sizeof(struct epoll_event));
+  if (!ctx->events) {
+    fprintf(stderr, "tcp_context_create err: cannot create event list\n");
+    goto create_error;
   }
 
   ctx->callback = params.callback;
@@ -58,35 +66,37 @@ void *socev_create_tcp_context(tcp_context_params params) {
   ctx->fd = create_listener_socket(params.port);
   if (ctx->fd == -1) {
     fprintf(stderr, "socket create failed\n");
-    socev_destroy_tcp_context(ctx);
-    return NULL;
+    goto create_error;
   }
 
-  ctx->ci_list = ci_list_create(params.max_client_count);
-
-  ctx->ci_list->pfd_lst[0].fd = ctx->fd;
-  ctx->ci_list->pfd_lst[0].events = POLLIN;
+  if (epoll_ctl_add(ctx->efd, ctx->fd, EPOLLIN) == -1) {
+    goto create_error;
+  }
 
   // start listening incoming connections
-  if (listen(ctx->fd, ctx->max_client_count) == -1) {
-    fprintf(stderr, "socev_create_tcp_context err: %s\n", strerror(errno));
-    socev_destroy_tcp_context(ctx);
-    return NULL;
+  if (listen(ctx->fd, params.max_client_count) == -1) {
+    fprintf(stderr, "tcp_context_create err: %s\n", strerror(errno));
+    goto create_error;
   }
 
   return ctx;
+
+create_error:
+  tcp_context_destroy(ctx);
+  return NULL;
 }
 
-void socev_destroy_tcp_context(void *tcp_ctx) {
+void tcp_context_destroy(void* tcp_ctx) {
   if (!tcp_ctx) {
-    tcp_context *ctx = (tcp_context *)(tcp_ctx);
-
-    // release client info list
-    ci_list_destroy(ctx->ci_list);
+    tcp_context* ctx = (tcp_context*)(tcp_ctx);
 
     // close listening socket
     if (ctx->fd != -1) {
       close(ctx->fd);
+    }
+
+    if (ctx->efd != -1) {
+      close(ctx->efd);
     }
 
     // free receive buffer
@@ -94,33 +104,25 @@ void socev_destroy_tcp_context(void *tcp_ctx) {
       free(ctx->recv_buf);
     }
 
+    // free event list
+    if (ctx->events) {
+      free(ctx->events);
+    }
+
+    client_list_destroy(ctx->client_list);
+
     // release tcp context
     free(ctx);
     ctx = NULL;
   }
 }
 
-void socev_set_timer(void *c_info, const uint64_t timeout_us) {
-  if (c_info) {
-    ci_t *inf = (ci_t *)c_info;
-    inf->timer_pfd->events |= POLLIN;
-    arm_timer(inf->timer_fd, timeout_us);
-  }
-}
-
-void socev_callback_on_writable(void *c_info) {
-  if (c_info) {
-    ci_t *inf = (ci_t *)c_info;
-    inf->pfd->events |= POLLOUT;
-  }
-}
-
-int do_accept(tcp_context *ctx) {
+int do_accept(tcp_context* ctx) {
   struct sockaddr_in client_addr;
   memset(&client_addr, 0, sizeof(struct sockaddr_in));
   socklen_t size = sizeof(struct sockaddr_in);
 
-  int new_fd = accept(ctx->fd, (struct sockaddr *)(&client_addr), &size);
+  int new_fd = accept(ctx->fd, (struct sockaddr*)(&client_addr), &size);
   if (new_fd == -1) {
     fprintf(stderr, "do_accept err: %s\n", strerror(errno));
     return -1;
@@ -130,20 +132,28 @@ int do_accept(tcp_context *ctx) {
     return -1;
   }
 
-  ci_t *c_info = add_ci(&ctx->ci_list, new_fd, &client_addr);
+  void* client = client_create(
+      ctx->efd, new_fd, inet_ntoa(client_addr.sin_addr), client_addr.sin_port);
+
+  if (!client) {
+    fprintf(stderr, "cannot create new client");
+    return -1;
+  }
+
+  if (!client_list_add_client(ctx->client_list, client)) {
+    return -1;
+  }
 
   if (ctx->callback) {
-    ctx->callback(CLIENT_CONNECTED, c_info, NULL, 0);
+    ctx->callback(EVT_CLIENT_CONNECTED, client, NULL, 0);
   }
 
   return new_fd;
 }
 
-int do_receive(tcp_context *ctx, ci_t *c_info) {
-  // clear the internal buffer
-  memset(ctx->recv_buf, 0, INTERNAL_BUFFER_SIZE);
-
-  ssize_t bytes = recv(c_info->fd, ctx->recv_buf, INTERNAL_BUFFER_SIZE, 0);
+int do_receive(tcp_context* ctx, void* client) {
+  int fd = client_get_fd(client);
+  ssize_t bytes = recv(fd, ctx->recv_buf, INTERNAL_BUFFER_SIZE, 0);
   if (bytes == -1) {
     fprintf(stderr, "do_receive err: %s\n", strerror(errno));
     return -1;
@@ -152,7 +162,7 @@ int do_receive(tcp_context *ctx, ci_t *c_info) {
   // client disconnected
   if (bytes == 0) {
     if (ctx->callback) {
-      ctx->callback(CLIENT_DISCONNECTED, c_info, NULL, 0);
+      ctx->callback(EVT_CLIENT_DISCONNECTED, client, NULL, 0);
     }
 
     return -2;
@@ -160,93 +170,76 @@ int do_receive(tcp_context *ctx, ci_t *c_info) {
 
   // client data received
   if (ctx->callback) {
-    ctx->callback(CLIENT_DATA_RECEIVED, c_info, ctx->recv_buf, bytes);
+    ctx->callback(EVT_CLIENT_DATA_RECEIVED, client, ctx->recv_buf, bytes);
   }
 
   return 0;
 }
 
-int socev_write(void *c_info, const void *data, unsigned int len) {
-  if (!c_info) {
-    fprintf(stderr, "socev_write err: invalid client info\n");
+int tcp_context_service(void* tcp_ctx, int timeout_ms) {
+  int nfds, i, fd;
+  client_get_result_t get_res;
+
+  if (!tcp_ctx) {
     return -1;
   }
 
-  ci_t *inf = (ci_t *)c_info;
-  int result = write(inf->fd, data, len);
+  tcp_context* ctx = (tcp_context*)(tcp_ctx);
+  const size_t fd_cnt = client_list_get_max_count(ctx->client_list) * 2 + 1;
 
-  if (result == -1) {
-    fprintf(stderr, "socev_write err: %s\n", strerror(errno));
+  nfds = epoll_wait(ctx->efd, ctx->events, fd_cnt, timeout_ms);
+
+  if (nfds == -1) {
+    fprintf(stderr, "socev_service err: %s\n", strerror(errno));
+    return nfds;
   }
 
-  return result;
-}
-
-int socev_service(void *tcp_ctx, int timeout_ms) {
-  int result = -1;
-
-  if (tcp_ctx) {
-    tcp_context *ctx = (tcp_context *)(tcp_ctx);
-    const size_t fd_cnt = ctx->ci_list->count * 2 + 1;
-
-    result = poll(ctx->ci_list->pfd_lst, fd_cnt, timeout_ms);
-
-    if (result == -1) {
-      fprintf(stderr, "socev_service err: %s\n", strerror(errno));
-      return result;
-    }
-
-    if (result > 0) {
-      ci_list_t *ci_list = ctx->ci_list;
-      struct pollfd *pfd_lst = ci_list->pfd_lst;
-
-      // handle incoming connection
-      if (pfd_lst[0].revents & POLLIN) {
+  for (i = 0; i < nfds; i++) {
+    if (ctx->events[i].events & EPOLLIN) {
+      fd = ctx->events[i].data.fd;
+      if (fd == ctx->fd) {
+        // handle incoming connection
         if (do_accept(ctx) == -1) {
           fprintf(stderr, "do_accept failed\n");
         }
+        continue;
       }
 
-      // iterate through the connected client list
-      for (size_t i = 0; i < ci_list->count; ++i) {
-        ci_t *c_info = &ci_list->ci_lst[i];
-        struct pollfd *pfd = &pfd_lst[2 * i + 1];
-        struct pollfd *timer_pfd = &pfd_lst[2 * i + 2];
+      if (client_list_get_client(ctx->client_list, fd, &get_res) == -1)
+        continue;
 
-        // process outbound data
-        if ((pfd->events & POLLOUT) && (pfd->revents & POLLOUT)) {
-          if (ctx->callback) {
-            ctx->callback(CLIENT_WRITABLE, c_info, NULL, 0);
-          }
-
-          // clear pollout request of the client
-          pfd->events &= ~POLLOUT;
-        }
-
+      if (get_res.type == FD_TIMER) {
         // process timer expired
-        if (timer_pfd->revents & POLLIN) {
-          if (ctx->callback) {
-            ctx->callback(CLIENT_TIMER_EXPIRED, c_info, NULL, 0);
-          }
-          timer_pfd->events &= ~POLLIN;
+        client_set_timer(get_res.client, 0);     // stop the timer
+        client_enable_timer(get_res.client, 0);  // disable the timer
+        if (ctx->callback) {
+          ctx->callback(EVT_CLIENT_TIMER_EXPIRED, get_res.client, NULL, 0);
         }
+      }
 
-        // process inbound data
-        if (pfd->revents & POLLIN) {
-          const int recv_res = do_receive(ctx, c_info);
-          if (recv_res == -1) {
-            // handle receive error
-            fprintf(stderr, "do_receive failed\n");
-          } else if (recv_res == -2) {
-            // handle disconnected client
-            close(c_info->fd);
-            close(c_info->timer_fd);
-            del_ci(&ctx->ci_list, c_info->fd);
-          }
+      // process inbound data
+      if (get_res.type == FD_REGULAR) {
+        const int recv_res = do_receive(ctx, get_res.client);
+        if (recv_res == -1) {
+          // handle receive error
+          fprintf(stderr, "do_receive failed\n");
+        } else if (recv_res == -2) {
+          // handle disconnected client
+          client_list_del_client(ctx->client_list, fd);
         }
+      }
+    }
+    if (ctx->events[i].events & EPOLLOUT) {
+      // process outbound data
+
+      // clear pollout request of the client
+      client_clear_callback_on_writable(get_res.client);
+
+      if (ctx->callback) {
+        ctx->callback(EVT_CLIENT_WRITABLE, get_res.client, NULL, 0);
       }
     }
   }
 
-  return result;
+  return nfds;
 }
