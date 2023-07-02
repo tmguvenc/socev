@@ -10,9 +10,9 @@ TEST(tcp_context, create_destroy) {
                    const unsigned int len){}
   };
 
-  auto ctx = socev_create_tcp_context(params);
+  auto ctx = tcp_context_create(params);
   ASSERT_NE(ctx, nullptr);
-  socev_destroy_tcp_context(ctx);
+  tcp_context_destroy(ctx);
 }
 
 int main(int argc, char* argv[]) {

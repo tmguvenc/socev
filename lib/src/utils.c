@@ -1,4 +1,5 @@
 #include "utils.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -28,7 +29,7 @@ int set_socket_nonblocking(int fd) {
   return result;
 }
 
-int create_listener_socket(unsigned short port) {
+int create_listener_socket(uint16_t port) {
   int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (socket_fd == -1) {
     fprintf(stderr, "create_listener_socket err: %s\n", strerror(errno));
@@ -50,7 +51,7 @@ int create_listener_socket(unsigned short port) {
   server.sin_port = htons(port);
   server.sin_addr.s_addr = INADDR_ANY;
 
-  if (bind(socket_fd, (struct sockaddr *)(&server),
+  if (bind(socket_fd, (struct sockaddr*)(&server),
            sizeof(struct sockaddr_in)) == -1) {
     fprintf(stderr, "create_listener_socket err: %s\n", strerror(errno));
     close(socket_fd);
@@ -60,27 +61,10 @@ int create_listener_socket(unsigned short port) {
   return socket_fd;
 }
 
-struct pollfd *create_fd_list(unsigned int count) {
-  struct pollfd *fd_list =
-      (struct pollfd *)malloc(count * sizeof(struct pollfd));
-
-  if (!fd_list) {
-    fprintf(stderr,
-            "create_fd_list err: cannot allocate memory for %d pollfd\n",
-            count);
-    return NULL;
-  }
-
-  // clear pollfd list
-  memset(fd_list, 0, count * sizeof(struct pollfd));
-
-  return fd_list;
-}
-
 struct timespec to_timespec(const int64_t interval_us) {
-  struct timespec ts = {.tv_sec = interval_us / 1e6,
-                        .tv_nsec =
-                            (interval_us - (interval_us / 1e6) * 1e6) * 1e6};
+  struct timespec ts = {
+      .tv_sec = interval_us / 1e6,
+      .tv_nsec = (interval_us - (interval_us / 1e6) * 1e6) * 1e6};
 
   return ts;
 }
@@ -102,6 +86,17 @@ int arm_timer(int timer_fd, const int64_t interval_us) {
 
   if (timerfd_settime(timer_fd, TFD_TIMER_ABSTIME, &new_value, NULL) == -1) {
     fprintf(stderr, "timerfd_settime err: %s\n", strerror(errno));
+    return -1;
+  }
+
+  return 0;
+}
+
+int disarm_timer(int timer_fd) {
+  struct itimerspec new_value = {};
+
+  if (timerfd_settime(timer_fd, TFD_TIMER_ABSTIME, &new_value, NULL) == -1) {
+    fprintf(stderr, "cannot disarm timer: [%s]\n", strerror(errno));
     return -1;
   }
 

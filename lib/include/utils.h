@@ -3,13 +3,13 @@
 
 #include <stdint.h>
 
-struct pollfd;
 struct timespec;
 
-int create_listener_socket(unsigned short port);
+int create_listener_socket(uint16_t port);
 int set_socket_nonblocking(int fd);
 
 struct timespec to_timespec(const int64_t interval_us);
 int arm_timer(int timer_fd, const int64_t interval_us);
+int disarm_timer(int timer_fd);
 
-#endif // LIB_UTILS_H_
+#endif  // LIB_UTILS_H_
