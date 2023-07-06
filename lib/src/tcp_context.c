@@ -140,7 +140,7 @@ int do_accept(tcp_context* ctx) {
     return -1;
   }
 
-  if (!client_list_add_client(ctx->client_list, client)) {
+  if (client_list_add_client(ctx->client_list, client) == -1) {
     return -1;
   }
 
