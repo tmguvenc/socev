@@ -6,7 +6,7 @@ TEST(tcp_context, create_destroy) {
   tcp_context_params params = {
     .port = 9000,
     .max_client_count = 2,
-    .callback = [](const event_type ev, void *c_info, const void *in,
+    .cb = [](const event_type ev, void *c_info, const void *in,
                    const unsigned int len){}
   };
 

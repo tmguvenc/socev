@@ -47,7 +47,7 @@ int main(int argc, char* argv[]) {
   signal(SIGINT, signal_handler);
 
   tcp_context_params params = {
-      .port = 9000, .max_client_count = 10, .callback = callback};
+      .port = 9000, .max_client_count = 10, .cb = callback};
 
   void* ctx = tcp_context_create(params);
 

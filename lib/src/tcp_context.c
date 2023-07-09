@@ -61,7 +61,7 @@ void* tcp_context_create(tcp_context_params params) {
     goto create_error;
   }
 
-  ctx->callback = params.callback;
+  ctx->callback = params.cb;
 
   ctx->fd = create_listener_socket(params.port);
   if (ctx->fd == -1) {
