@@ -26,10 +26,15 @@ typedef struct {
                    const unsigned int len);
   void* client_list;
   struct epoll_event* events;
-} tcp_context;
+} tcp_context_t;
 
-void* tcp_context_create(tcp_context_params params) {
-  tcp_context* ctx = (tcp_context*)calloc(1, sizeof(tcp_context));
+void* tcp_context_create(const tcp_context_params* params) {
+  if (!params) {
+    fprintf(stderr, "tcp_context_create err: invalid parameters\n");
+    return NULL;
+  }
+
+  tcp_context_t* ctx = (tcp_context_t*)calloc(1, sizeof(tcp_context_t));
 
   if (!ctx) {
     fprintf(stderr, "tcp_context_create err: cannot create context\n");
@@ -48,22 +53,22 @@ void* tcp_context_create(tcp_context_params params) {
     goto create_error;
   }
 
-  ctx->client_list = client_list_create(params.max_client_count);
+  ctx->client_list = client_list_create(params->max_client_count);
   if (!ctx->client_list) {
     fprintf(stderr, "tcp_context_create err: cannot create client list\n");
     goto create_error;
   }
 
   ctx->events =
-      calloc(params.max_client_count * 2 + 1, sizeof(struct epoll_event));
+      calloc(params->max_client_count * 2 + 1, sizeof(struct epoll_event));
   if (!ctx->events) {
     fprintf(stderr, "tcp_context_create err: cannot create event list\n");
     goto create_error;
   }
 
-  ctx->callback = params.cb;
+  ctx->callback = params->cb;
 
-  ctx->fd = create_listener_socket(params.port);
+  ctx->fd = create_listener_socket(params->port);
   if (ctx->fd == -1) {
     fprintf(stderr, "socket create failed\n");
     goto create_error;
@@ -74,7 +79,7 @@ void* tcp_context_create(tcp_context_params params) {
   }
 
   // start listening incoming connections
-  if (listen(ctx->fd, params.max_client_count) == -1) {
+  if (listen(ctx->fd, params->max_client_count) == -1) {
     fprintf(stderr, "tcp_context_create err: %s\n", strerror(errno));
     goto create_error;
   }
@@ -88,7 +93,7 @@ create_error:
 
 void tcp_context_destroy(void* tcp_ctx) {
   if (!tcp_ctx) {
-    tcp_context* ctx = (tcp_context*)(tcp_ctx);
+    tcp_context_t* ctx = (tcp_context_t*)(tcp_ctx);
 
     // close listening socket
     if (ctx->fd != -1) {
@@ -117,7 +122,7 @@ void tcp_context_destroy(void* tcp_ctx) {
   }
 }
 
-int do_accept(tcp_context* ctx) {
+int do_accept(tcp_context_t* ctx) {
   struct sockaddr_in client_addr;
   memset(&client_addr, 0, sizeof(struct sockaddr_in));
   socklen_t size = sizeof(struct sockaddr_in);
@@ -151,7 +156,7 @@ int do_accept(tcp_context* ctx) {
   return new_fd;
 }
 
-int do_receive(tcp_context* ctx, void* client) {
+int do_receive(tcp_context_t* ctx, void* client) {
   int fd = client_get_fd(client);
   ssize_t bytes = recv(fd, ctx->recv_buf, INTERNAL_BUFFER_SIZE, 0);
   if (bytes == -1) {
@@ -184,7 +189,7 @@ int tcp_context_service(void* tcp_ctx, int timeout_ms) {
     return -1;
   }
 
-  tcp_context* ctx = (tcp_context*)(tcp_ctx);
+  tcp_context_t* ctx = (tcp_context_t*)(tcp_ctx);
   const size_t fd_cnt = client_list_get_max_count(ctx->client_list) * 2 + 1;
 
   nfds = epoll_wait(ctx->efd, ctx->events, fd_cnt, timeout_ms);

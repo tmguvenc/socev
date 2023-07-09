@@ -49,7 +49,7 @@ int main(int argc, char* argv[]) {
   tcp_context_params params = {
       .port = 9000, .max_client_count = 10, .cb = callback};
 
-  void* ctx = tcp_context_create(params);
+  void* ctx = tcp_context_create(&params);
 
   printf("server started\n");
 

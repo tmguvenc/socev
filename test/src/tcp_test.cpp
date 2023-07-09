@@ -10,7 +10,7 @@ TEST(tcp_context, create_destroy) {
                    const unsigned int len){}
   };
 
-  auto ctx = tcp_context_create(params);
+  auto ctx = tcp_context_create(&params);
   ASSERT_NE(ctx, nullptr);
   tcp_context_destroy(ctx);
 }

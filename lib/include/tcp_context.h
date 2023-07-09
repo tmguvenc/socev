@@ -9,7 +9,7 @@ typedef struct {
   callback_f cb;
 } tcp_context_params;
 
-void* tcp_context_create(tcp_context_params params);
+void* tcp_context_create(const tcp_context_params* params);
 void tcp_context_destroy(void* tcp_ctx);
 
 int tcp_context_service(void* tcp_ctx, int timeout_ms);

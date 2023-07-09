@@ -56,6 +56,10 @@ int create_can_socket(const char* iface) {
     goto can_err;
   }
 
+  if (set_socket_nonblocking(socket_fd) == -1) {
+    goto can_err;
+  }
+
   addr.can_family = AF_CAN;
   addr.can_ifindex = ifr.ifr_ifindex;
 
