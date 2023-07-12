@@ -3,12 +3,11 @@
 
 #include <linux/can.h>
 
-#include "definitions.h"
 #include "can_filter.h"
+#include "definitions.h"
 
 /** @brief A struct for can context parameters */
 typedef struct {
-
   /** @brief can interface name */
   const char* iface;
 

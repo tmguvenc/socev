@@ -14,7 +14,8 @@
     "epoll.h": "c",
     "can.h": "c",
     "utils.h": "c",
-    "definitions.h": "c"
+    "definitions.h": "c",
+    "socket.h": "c"
   },
   "cmake.configureOnOpen": false,
   "editor.defaultFormatter": "xaver.clang-format"
