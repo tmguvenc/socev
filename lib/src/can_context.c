@@ -20,8 +20,8 @@ typedef struct {
 } can_message_t;
 
 typedef struct {
-  int fd;
   int efd;
+  int fd[MAX_BUS_COUNT];
   can_message_t* messages;
   uint8_t timer_cnt;
   char recv_buf[sizeof(struct can_frame)];
@@ -35,7 +35,6 @@ static int set_filters(can_context_t* ctx, const can_context_params* params);
 void* can_context_create(const can_context_params* params) {
   can_context_t* ctx;
   uint8_t idx = 0, fd_cnt = 0;
-  int fd;
 
   if (!params) {
     fprintf(stderr, "can_context_create err: invalid can context parameters\n");
@@ -61,14 +60,16 @@ void* can_context_create(const can_context_params* params) {
 
   ctx->cb = params->cb;
 
-  ctx->fd = create_can_socket(params->iface);
-  if (ctx->fd == -1) {
-    fprintf(stderr, "socket create failed\n");
-    goto create_err;
-  }
+  for (idx = 0; idx < MAX_BUS_COUNT; ++idx) {
+    ctx->fd[idx] = create_can_socket(params->ifaces[idx].name);
+    if (ctx->fd[idx] == -1) {
+      fprintf(stderr, "socket create failed\n");
+      goto create_err;
+    }
 
-  if (epoll_ctl_add(ctx->efd, ctx->fd, EPOLLIN) == -1) {
-    goto create_err;
+    if (epoll_ctl_add(ctx->efd, ctx->fd, EPOLLIN) == -1) {
+      goto create_err;
+    }
   }
 
   if (params->filter_cnt > 0) {
@@ -91,12 +92,13 @@ create_err:
   return NULL;
 }
 
-static int create_timer(can_context_t* ctx, int timeout, int* fd, int* cnt) {
+static int create_timer(can_context_t* ctx, int timeout, int* fd,
+                        uint8_t* cnt) {
   *fd = -1;
   if (timeout != -1) {
     *fd = timerfd_create(CLOCK_REALTIME, 0);
     if (epoll_ctl_add(ctx->efd, *fd, EPOLLIN) == -1) {
-      fprintf(stderr, "cannot add fd [%d] to epoll: [%s]\n", fd,
+      fprintf(stderr, "cannot add fd [%d] to epoll: [%s]\n", *fd,
               strerror(errno));
       return -1;
     }
@@ -107,7 +109,8 @@ static int create_timer(can_context_t* ctx, int timeout, int* fd, int* cnt) {
 
 static int init_messages(can_context_t* ctx, const can_context_params* params) {
   uint8_t idx, cnt;
-  ctx->messages = (int*)calloc(params->filter_cnt, sizeof(can_message_t));
+  ctx->messages =
+      (can_message_t*)calloc(params->filter_cnt, sizeof(can_message_t));
 
   cnt = 0;
   for (idx = 0; idx < params->filter_cnt; ++idx) {
@@ -196,55 +199,55 @@ void can_context_destroy(void* can_ctx) {
 
 int can_context_service(void* can_ctx, int timeout_ms) {
   int nfds, i, fd;
-  client_get_result_t get_res;
+  // client_get_result_t get_res;
 
-  if (!can_ctx) {
-    return -1;
-  }
+  // if (!can_ctx) {
+  //   return -1;
+  // }
 
-  can_context_t* ctx = (can_context_t*)(can_ctx);
-  const size_t fd_cnt = ctx->timer_cnt + 1;
+  // can_context_t* ctx = (can_context_t*)(can_ctx);
+  // const size_t fd_cnt = ctx->timer_cnt + 1;
 
-  nfds = epoll_wait(ctx->efd, ctx->events, fd_cnt, timeout_ms);
+  // nfds = epoll_wait(ctx->efd, ctx->events, fd_cnt, timeout_ms);
 
-  if (nfds == -1) {
-    fprintf(stderr, "socev_service err: %s\n", strerror(errno));
-    return nfds;
-  }
+  // if (nfds == -1) {
+  //   fprintf(stderr, "socev_service err: %s\n", strerror(errno));
+  //   return nfds;
+  // }
 
-  for (i = 0; i < nfds; i++) {
-    if (ctx->events[i].events & EPOLLIN) {
-      fd = ctx->events[i].data.fd;
+  // for (i = 0; i < nfds; i++) {
+  //   if (ctx->events[i].events & EPOLLIN) {
+  //     fd = ctx->events[i].data.fd;
 
-      if (get_res.type == FD_TIMER) {
-        // process timer expired
-        client_set_timer(get_res.client, 0);     // stop the timer
-        client_enable_timer(get_res.client, 0);  // disable the timer
-        if (ctx->cb) {
-          ctx->cb(EVT_CLIENT_TIMER_EXPIRED, get_res.client, NULL, 0);
-        }
-      }
+  //     if (get_res.type == FD_TIMER) {
+  //       // process timer expired
+  //       client_set_timer(get_res.client, 0);     // stop the timer
+  //       client_enable_timer(get_res.client, 0);  // disable the timer
+  //       if (ctx->cb) {
+  //         ctx->cb(EVT_CLIENT_TIMER_EXPIRED, get_res.client, NULL, 0);
+  //       }
+  //     }
 
-      // process inbound data
-      if (get_res.type == FD_REGULAR) {
-        const int recv_res = do_receive(ctx, get_res.client);
-        if (recv_res == -1) {
-          // handle receive error
-          fprintf(stderr, "do_receive failed\n");
-        }
-      }
-    }
-    if (ctx->events[i].events & EPOLLOUT) {
-      // process outbound data
+  //     // process inbound data
+  //     if (get_res.type == FD_REGULAR) {
+  //       const int recv_res = do_receive(ctx, get_res.client);
+  //       if (recv_res == -1) {
+  //         // handle receive error
+  //         fprintf(stderr, "do_receive failed\n");
+  //       }
+  //     }
+  //   }
+  //   if (ctx->events[i].events & EPOLLOUT) {
+  //     // process outbound data
 
-      // clear pollout request of the client
-      client_clear_callback_on_writable(get_res.client);
+  //     // clear pollout request of the client
+  //     client_clear_callback_on_writable(get_res.client);
 
-      if (ctx->cb) {
-        ctx->cb(EVT_CLIENT_WRITABLE, get_res.client, NULL, 0);
-      }
-    }
-  }
+  //     if (ctx->cb) {
+  //       ctx->cb(EVT_CLIENT_WRITABLE, get_res.client, NULL, 0);
+  //     }
+  //   }
+  // }
 
   return nfds;
 }

@@ -5,6 +5,9 @@
 
 /** @brief A struct for can filters */
 typedef struct {
+  /** @brief bus name */
+  const char* iface;
+
   /** @brief can id of the filter */
   canid_t id;
 

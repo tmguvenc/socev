@@ -6,10 +6,17 @@
 #include "can_filter.h"
 #include "definitions.h"
 
+#define MAX_BUSNAME_LEN 16
+#define MAX_BUS_COUNT 4
+
+typedef struct {
+  char name[16];
+} canbus_t;
+
 /** @brief A struct for can context parameters */
 typedef struct {
   /** @brief can interface name */
-  const char* iface;
+  canbus_t ifaces[MAX_BUS_COUNT];
 
   /** @brief callback function */
   callback_f cb;
