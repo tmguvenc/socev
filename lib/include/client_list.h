@@ -1,9 +1,7 @@
 #ifndef LIB_CLIENT_LIST_H_
 #define LIB_CLIENT_LIST_H_
 
-#include <stdint.h>
-
-typedef enum { FD_REGULAR = 0, FD_TIMER, __MAX_FD_CNT } fd_type_t;
+#include "definitions.h"
 
 typedef struct {
   fd_type_t type;

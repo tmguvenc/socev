@@ -13,7 +13,8 @@
     "tcp_context.h": "c",
     "epoll.h": "c",
     "can.h": "c",
-    "utils.h": "c"
+    "utils.h": "c",
+    "definitions.h": "c"
   },
   "cmake.configureOnOpen": false,
   "editor.defaultFormatter": "xaver.clang-format"

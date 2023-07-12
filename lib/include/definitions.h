@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+typedef enum { FD_REGULAR = 0, FD_TIMER, __MAX_FD_CNT } fd_type_t;
+
 typedef enum {
   EVT_CLIENT_CONNECTED = 0,
   EVT_CLIENT_DISCONNECTED,
