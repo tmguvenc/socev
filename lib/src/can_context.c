@@ -61,14 +61,18 @@ void* can_context_create(const can_context_params* params) {
   ctx->cb = params->cb;
 
   for (idx = 0; idx < MAX_BUS_COUNT; ++idx) {
-    ctx->fd[idx] = create_can_socket(params->ifaces[idx].name);
-    if (ctx->fd[idx] == -1) {
-      fprintf(stderr, "socket create failed\n");
-      goto create_err;
-    }
+    if (strlen(params->ifaces[idx].name) > 0) {
+      ctx->fd[idx] = create_can_socket(params->ifaces[idx].name);
+      if (ctx->fd[idx] == -1) {
+        fprintf(stderr, "socket create failed\n");
+        goto create_err;
+      }
 
-    if (epoll_ctl_add(ctx->efd, ctx->fd, EPOLLIN) == -1) {
-      goto create_err;
+      if (epoll_ctl_add(ctx->efd, ctx->fd[idx], EPOLLIN) == -1) {
+        goto create_err;
+      }
+    } else {
+      ctx->fd[idx] = -1;
     }
   }
 
@@ -138,21 +142,32 @@ init_err:
 }
 
 static int set_filters(can_context_t* ctx, const can_context_params* params) {
-  uint8_t idx;
+  uint8_t i, j, k;
   int ret = 0;
+  const char* iface;
+  const can_filter_t* filter;
+
   struct can_filter* filters =
       (struct can_filter*)calloc(params->filter_cnt, sizeof(struct can_filter));
 
-  for (; idx < params->filter_cnt; ++idx) {
-    const can_filter_t* filter = &params->filters[idx];
-    filters[idx].can_id = filter->id;
-    filters[idx].can_mask = filter->mask;
-  }
+  for (i = 0; i < MAX_BUS_COUNT; ++i) {
+    if (ctx->fd[i] != -1) {
+      iface = params->filters[i].iface;
+      for (k = 0, j = 0; j < params->filter_cnt; ++j) {
+        filter = &params->filters[j];
+        if (strcmp(filter->iface, iface) == 0) {
+          filters[k].can_id = filter->id;
+          filters[k].can_mask = filter->mask;
+          k++;
+        }
+      }
 
-  if (setsockopt(ctx->fd, SOL_CAN_RAW, CAN_RAW_FILTER, filters,
-                 sizeof(struct can_filter) * params->filter_cnt) == -1) {
-    fprintf(stderr, "cannot add can filters: %s\n", strerror(errno));
-    ret = -1;
+      if (setsockopt(ctx->fd[i], SOL_CAN_RAW, CAN_RAW_FILTER, filters,
+                     sizeof(struct can_filter) * k) == -1) {
+        fprintf(stderr, "cannot add can filters: %s\n", strerror(errno));
+        ret = -1;
+      }
+    }
   }
 
   free(filters);
@@ -177,10 +192,13 @@ void can_context_destroy(void* can_ctx) {
       free(ctx->messages);
     }
 
-    // close listening socket
-    if (ctx->fd != -1) {
-      close(ctx->fd);
+    for (idx = 0; idx < MAX_BUS_COUNT; ++idx) {
+      // close socket
+      if (ctx->fd[idx] != -1) {
+        close(ctx->fd[idx]);
+      }
     }
+
 
     if (ctx->efd != -1) {
       close(ctx->efd);
