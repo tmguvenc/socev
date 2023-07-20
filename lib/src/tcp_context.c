@@ -183,7 +183,7 @@ int do_receive(tcp_context_t* ctx, void* client) {
 
 int tcp_context_service(void* tcp_ctx, int timeout_ms) {
   int nfds, i, fd;
-  client_get_result_t get_res;
+  result_t get_res;
 
   if (!tcp_ctx) {
     return -1;
@@ -195,7 +195,7 @@ int tcp_context_service(void* tcp_ctx, int timeout_ms) {
   nfds = epoll_wait(ctx->efd, ctx->events, fd_cnt, timeout_ms);
 
   if (nfds == -1) {
-    fprintf(stderr, "socev_service err: %s\n", strerror(errno));
+    fprintf(stderr, "tcp service err: %s\n", strerror(errno));
     return nfds;
   }
 
@@ -214,11 +214,15 @@ int tcp_context_service(void* tcp_ctx, int timeout_ms) {
         continue;
 
       if (get_res.type == FD_TIMER) {
-        // process timer expired
-        client_set_timer(get_res.client, 0);     // stop the timer
-        client_enable_timer(get_res.client, 0);  // disable the timer
-        if (ctx->callback) {
-          ctx->callback(EVT_CLIENT_TIMER_EXPIRED, get_res.client, NULL, 0);
+        if (read(fd, ctx->recv_buf, INTERNAL_BUFFER_SIZE) == -1) {
+          fprintf(stderr, "read failed: [%s]\n", strerror(errno));
+        } else {
+          // process timer expired
+          client_set_timer(get_res.client, 0);     // stop the timer
+          client_enable_timer(get_res.client, 0);  // disable the timer
+          if (ctx->callback) {
+            ctx->callback(EVT_CLIENT_TIMER_EXPIRED, get_res.client, NULL, 0);
+          }
         }
       }
 

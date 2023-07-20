@@ -14,7 +14,7 @@ typedef enum {
   __EVT_MAX_COUNT
 } event_type;
 
-typedef void (*callback_f)(const event_type ev, void* c_info, const void* in,
+typedef void (*callback_f)(const event_type ev, void* client, const void* in,
                            const uint32_t len);
 
 #endif  // LIB_DEFINITIONS_H_

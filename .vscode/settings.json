@@ -15,7 +15,8 @@
     "can.h": "c",
     "utils.h": "c",
     "definitions.h": "c",
-    "socket.h": "c"
+    "socket.h": "c",
+    "result.h": "c"
   },
   "cmake.configureOnOpen": false,
   "editor.defaultFormatter": "xaver.clang-format"
