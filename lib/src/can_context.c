@@ -15,6 +15,7 @@
 
 typedef struct {
   can_filter_t filter;
+  int parent_fd;
   int recv_timer_id;
   int send_timer_id;
 } can_message_t;
@@ -29,12 +30,15 @@ typedef struct {
   struct epoll_event* events;
 } can_context_t;
 
-static int init_messages(can_context_t* ctx, const can_context_params* params);
-static int set_filters(can_context_t* ctx, const can_context_params* params);
+static int init_message(can_message_t* msg);
 
 void* can_context_create(const can_context_params* params) {
   can_context_t* ctx;
-  uint8_t idx = 0, fd_cnt = 0;
+  uint8_t idx = 0, fd_cnt = 0, cnt;
+  int tmp_fd;
+  const can_filter_t* filter;
+  struct can_filter* filters = NULL;
+  uint8_t j, k;
 
   if (!params) {
     fprintf(stderr, "can_context_create err: invalid can context parameters\n");
@@ -60,30 +64,81 @@ void* can_context_create(const can_context_params* params) {
 
   ctx->cb = params->cb;
 
+  ctx->messages =
+      (can_message_t*)calloc(params->filter_cnt, sizeof(can_message_t));
+
+  filters =
+      (struct can_filter*)calloc(params->filter_cnt, sizeof(struct can_filter));
+
   for (idx = 0; idx < MAX_BUS_COUNT; ++idx) {
+    init_message(&ctx->messages[idx]);
+    ctx->fd[idx] = -1;
+
     if (strlen(params->ifaces[idx].name) > 0) {
-      ctx->fd[idx] = create_can_socket(params->ifaces[idx].name);
-      if (ctx->fd[idx] == -1) {
-        fprintf(stderr, "socket create failed\n");
+      filter = &params->filters[idx];
+
+      tmp_fd = create_can_socket(params->ifaces[idx].name);
+      if (tmp_fd == -1) {
         goto create_err;
       }
 
-      if (epoll_ctl_add(ctx->efd, ctx->fd[idx], EPOLLIN) == -1) {
+      if (epoll_ctl_add(ctx->efd, tmp_fd, EPOLLIN) == -1) {
         goto create_err;
       }
-    } else {
-      ctx->fd[idx] = -1;
+
+      ctx->fd[idx] = tmp_fd;
+
+      if (filter->recv_timeout_ms != -1) {
+        if ((tmp_fd = timerfd_create(CLOCK_REALTIME, 0)) == -1) {
+          fprintf(stderr, "cannot create timer fd: [%s]\n", strerror(errno));
+          goto create_err;
+        }
+
+        if (epoll_ctl_add(ctx->efd, tmp_fd, EPOLLIN) == -1) {
+          fprintf(stderr, "cannot add fd [%d] to epoll: [%s]\n", tmp_fd,
+                  strerror(errno));
+          goto create_err;
+        }
+        ctx->messages[cnt].recv_timer_id = tmp_fd;
+        ctx->messages[cnt].parent_fd = ctx->fd[idx];
+      }
+
+      if (filter->send_timeout_ms != -1) {
+        if ((tmp_fd = timerfd_create(CLOCK_REALTIME, 0)) == -1) {
+          fprintf(stderr, "cannot create timer fd: [%s]\n", strerror(errno));
+          goto create_err;
+        }
+
+        if (epoll_ctl_add(ctx->efd, tmp_fd, EPOLLIN) == -1) {
+          fprintf(stderr, "cannot add fd [%d] to epoll: [%s]\n", tmp_fd,
+                  strerror(errno));
+          goto create_err;
+        }
+        ctx->messages[cnt].send_timer_id = tmp_fd;
+        ctx->messages[cnt].parent_fd = ctx->fd[idx];
+      }
+
+      if (filter->recv_timeout_ms != -1 || filter->send_timeout_ms != -1) {
+        cnt++;
+      }
+
+      for (k = 0, j = 0; j < params->filter_cnt; ++j) {
+        if (strcmp(params->filters[j].iface, filter->iface) == 0) {
+          filters[k].can_id = params->filters[j].id;
+          filters[k].can_mask = params->filters[j].mask;
+          k++;
+        }
+      }
+
+      if (setsockopt(ctx->fd[idx], SOL_CAN_RAW, CAN_RAW_FILTER, filters,
+                     sizeof(struct can_filter) * k) == -1) {
+        fprintf(stderr, "cannot add can filters: %s\n", strerror(errno));
+        goto create_err;
+      }
     }
   }
 
-  if (params->filter_cnt > 0) {
-    if (init_messages(ctx, params) != 0) {
-      goto create_err;
-    }
-    if (set_filters(ctx, params) != 0) {
-      goto create_err;
-    }
-  }
+  free(filters);
 
   ctx->events = calloc(ctx->timer_cnt + 1, sizeof(struct epoll_event));
   if (!ctx->events) {
@@ -92,86 +147,22 @@ void* can_context_create(const can_context_params* params) {
   }
 
 create_err:
+  if (filters) {
+    free(filters);
+  }
   can_context_destroy(ctx);
   return NULL;
 }
 
-static int create_timer(can_context_t* ctx, int timeout, int* fd,
-                        uint8_t* cnt) {
-  *fd = -1;
-  if (timeout != -1) {
-    *fd = timerfd_create(CLOCK_REALTIME, 0);
-    if (epoll_ctl_add(ctx->efd, *fd, EPOLLIN) == -1) {
-      fprintf(stderr, "cannot add fd [%d] to epoll: [%s]\n", *fd,
-              strerror(errno));
-      return -1;
-    }
-    ++(*cnt);
-  }
-  return 0;
-}
-
-static int init_messages(can_context_t* ctx, const can_context_params* params) {
-  uint8_t idx, cnt;
-  ctx->messages =
-      (can_message_t*)calloc(params->filter_cnt, sizeof(can_message_t));
-
-  cnt = 0;
-  for (idx = 0; idx < params->filter_cnt; ++idx) {
-    const can_filter_t* filter = &params->filters[idx];
-    if (create_timer(ctx, filter->recv_timeout_ms,
-                     &ctx->messages[cnt].recv_timer_id, &cnt) == -1) {
-      goto init_err;
-    }
-    if (create_timer(ctx, filter->send_timeout_ms,
-                     &ctx->messages[cnt].send_timer_id, &cnt) == -1) {
-      goto init_err;
-    }
-  }
-
-  ctx->timer_cnt = cnt;
-
-  return 0;
-
-init_err:
-  if (ctx->messages) {
-    free(ctx->messages);
-  }
-
-  return -1;
-}
-
-static int set_filters(can_context_t* ctx, const can_context_params* params) {
-  uint8_t i, j, k;
-  int ret = 0;
-  const char* iface;
-  const can_filter_t* filter;
-
-  struct can_filter* filters =
-      (struct can_filter*)calloc(params->filter_cnt, sizeof(struct can_filter));
-
-  for (i = 0; i < MAX_BUS_COUNT; ++i) {
-    if (ctx->fd[i] != -1) {
-      iface = params->filters[i].iface;
-      for (k = 0, j = 0; j < params->filter_cnt; ++j) {
-        filter = &params->filters[j];
-        if (strcmp(filter->iface, iface) == 0) {
-          filters[k].can_id = filter->id;
-          filters[k].can_mask = filter->mask;
-          k++;
-        }
-      }
-
-      if (setsockopt(ctx->fd[i], SOL_CAN_RAW, CAN_RAW_FILTER, filters,
-                     sizeof(struct can_filter) * k) == -1) {
-        fprintf(stderr, "cannot add can filters: %s\n", strerror(errno));
-        ret = -1;
-      }
-    }
-  }
-
-  free(filters);
-  return ret;
+static int init_message(can_message_t* msg) {
+  msg->filter.iface = NULL;
+  msg->filter.id = 0;
+  msg->filter.mask = 0;
+  msg->filter.recv_timeout_ms = -1;
+  msg->filter.recv_timeout_ms = -1;
+  msg->parent_fd = -1;
+  msg->recv_timer_id = -1;
+  msg->send_timer_id = -1;
 }
 
 void can_context_destroy(void* can_ctx) {
@@ -198,7 +189,6 @@ void can_context_destroy(void* can_ctx) {
         close(ctx->fd[idx]);
       }
     }
-
 
     if (ctx->efd != -1) {
       close(ctx->efd);
