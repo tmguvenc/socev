@@ -103,7 +103,7 @@ int can_message_list_get_message(void* ml, int fd, result_t* out) {
     return -1;
   }
   if (out) {
-    out->client = &list->list[idx];
+    out->client = list->list[idx];
   }
   return 0;
 }
