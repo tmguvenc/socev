@@ -59,17 +59,16 @@ void* can_context_create(const can_context_params* params) {
 
   ctx->cb = params->cb;
 
-  ctx->messages = can_message_list_create(params->filter_cnt);
-
-  filters =
-      (struct can_filter*)calloc(params->filter_cnt, sizeof(struct can_filter));
+  if (params->filter_cnt > 0) {
+    ctx->messages = can_message_list_create(params->filter_cnt);
+    filters = (struct can_filter*)calloc(params->filter_cnt,
+                                         sizeof(struct can_filter));
+  }
 
   for (idx = 0; idx < MAX_BUS_COUNT; ++idx) {
     ctx->fd[idx] = -1;
 
     if (strlen(params->ifaces[idx].name) > 0) {
-      filter = &params->filters[idx];
-
       tmp_fd = create_can_socket(params->ifaces[idx].name);
       if (tmp_fd == -1) {
         goto create_err;
@@ -82,6 +81,11 @@ void* can_context_create(const can_context_params* params) {
       ctx->fd[idx] = tmp_fd;
       ctx->evt_cnt++;
 
+      if (idx >= params->filter_cnt) {
+        continue;
+      }
+
+      filter = &params->filters[idx];
       if (filter->recv_timeout_ms != -1) {
         if ((tmp_fd = timerfd_create(CLOCK_REALTIME, 0)) == -1) {
           fprintf(stderr, "cannot create timer fd: [%s]\n", strerror(errno));
@@ -134,13 +138,17 @@ void* can_context_create(const can_context_params* params) {
     }
   }
 
-  free(filters);
+  if (filters) {
+    free(filters);
+  }
 
   ctx->events = calloc(ctx->evt_cnt, sizeof(struct epoll_event));
   if (!ctx->events) {
     fprintf(stderr, "can_context_create err: cannot create event list\n");
     goto create_err;
   }
+
+  return ctx;
 
 create_err:
   if (filters) {
