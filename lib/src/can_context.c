@@ -31,6 +31,7 @@ void* can_context_create(const can_context_params* params) {
   can_context_t* ctx;
   uint8_t idx;
   int tmp_fd;
+  void* msg;
   const can_filter_t* filter;
   struct can_filter* filters = NULL;
   uint8_t j, k;
@@ -86,37 +87,16 @@ void* can_context_create(const can_context_params* params) {
       }
 
       filter = &params->filters[idx];
-      if (filter->recv_timeout_ms != -1) {
-        if ((tmp_fd = timerfd_create(CLOCK_REALTIME, 0)) == -1) {
-          fprintf(stderr, "cannot create timer fd: [%s]\n", strerror(errno));
-          goto create_err;
-        }
 
-        if (epoll_ctl_add(ctx->efd, tmp_fd, EPOLLIN) == -1) {
-          fprintf(stderr, "cannot add fd [%d] to epoll: [%s]\n", tmp_fd,
-                  strerror(errno));
-          goto create_err;
-        }
-        can_message_list_set_recv_timer(ctx->messages, ctx->msg_cnt, tmp_fd,
-                                        ctx->fd[idx]);
-        ctx->evt_cnt++;
+      msg = can_message_create(ctx->efd, ctx->fd[idx], filter->recv_timeout_ms,
+                               filter->send_timeout_ms);
+      if (!msg) {
+        goto create_err;
       }
 
-      if (filter->send_timeout_ms != -1) {
-        if ((tmp_fd = timerfd_create(CLOCK_REALTIME, 0)) == -1) {
-          fprintf(stderr, "cannot create timer fd: [%s]\n", strerror(errno));
-          goto create_err;
-        }
+      can_message_list_add_message(ctx->messages, msg);
 
-        if (epoll_ctl_add(ctx->efd, tmp_fd, EPOLLIN) == -1) {
-          fprintf(stderr, "cannot add fd [%d] to epoll: [%s]\n", tmp_fd,
-                  strerror(errno));
-          goto create_err;
-        }
-        can_message_list_set_send_timer(ctx->messages, ctx->msg_cnt, tmp_fd,
-                                        ctx->fd[idx]);
-        ctx->evt_cnt++;
-      }
+      ctx->evt_cnt += can_message_active_fd_cnt(msg);
 
       if (filter->recv_timeout_ms != -1 || filter->send_timeout_ms != -1) {
         ctx->msg_cnt++;

@@ -9,8 +9,9 @@
 #include "client.h"
 
 typedef struct {
-  can_message_t* list;
+  uint16_t max_cnt;
   uint16_t cnt;
+  void** list;
 } can_message_list_t;
 
 void* can_message_list_create(uint16_t cnt) {
@@ -24,19 +25,16 @@ void* can_message_list_create(uint16_t cnt) {
 
   ml = (can_message_list_t*)calloc(1, sizeof(can_message_list_t));
   if (!ml) {
-    fprintf(stderr, "cannot create can message list\n");
+    fprintf(stderr, "cannot create can message list object\n");
     goto create_err;
   }
 
-  ml->cnt = cnt;
-  ml->list = (can_message_t*)calloc(cnt, sizeof(can_message_t));
+  ml->max_cnt = cnt;
+  ml->cnt = 0;
+  ml->list = (void**)calloc(cnt, sizeof(void*));
   if (!ml->list) {
     fprintf(stderr, "cannot create can message list\n");
     goto create_err;
-  }
-
-  for (idx = 0; idx < ml->cnt; idx++) {
-    can_message_init(&ml->list[idx]);
   }
 
   return ml;
@@ -54,7 +52,7 @@ void can_message_list_destroy(void* ml) {
     list = (can_message_list_t*)ml;
 
     for (idx = 0; idx < list->cnt; idx++) {
-      can_message_destroy(&list->list[idx]);
+      can_message_destroy(list->list[idx]);
     }
 
     free(list);
@@ -74,15 +72,15 @@ static inline uint16_t get_can_message_idx(can_message_list_t* list, int fd,
                                            result_t* out) {
   uint16_t idx = 0;
   for (; idx < list->cnt; ++idx) {
-    if (list->list[idx].parent_fd == fd) {
+    if (can_message_parent_fd(list->list[idx]) == fd) {
       if (out) {
         out->type = FD_REGULAR;
       }
       break;
     }
 
-    if (list->list[idx].recv_timer_id == fd ||
-        list->list[idx].send_timer_id == fd) {
+    if (can_message_recv_timer_fd(list->list[idx]) == fd ||
+        can_message_send_timer_fd(list->list[idx]) == fd) {
       if (out) {
         out->type = FD_TIMER;
       }
@@ -110,24 +108,36 @@ int can_message_list_get_message(void* ml, int fd, result_t* out) {
   return 0;
 }
 
-int can_message_list_set_recv_timer(void* ml, uint8_t idx, int timer_fd,
-                                    int parent_fd) {
-  if (!ml) {
-    fprintf(stderr, "invalid list object!\n");
-    return -1;
+static inline uint16_t find_next_empty_idx(can_message_list_t* list) {
+  uint16_t idx = 0;
+  for (; idx < list->max_cnt; ++idx) {
+    if (list->list[idx] == NULL) {
+      break;
+    }
   }
-  can_message_list_t* list = (can_message_list_t*)ml;
-  can_message_set_recv_timer(&list->list[idx], timer_fd, parent_fd);
-  return 0;
+  return idx;
 }
 
-int can_message_list_set_send_timer(void* ml, uint8_t idx, int timer_fd,
-                                    int parent_fd) {
+int can_message_list_add_message(void* ml, void* msg) {
   if (!ml) {
     fprintf(stderr, "invalid list object!\n");
     return -1;
   }
+
   can_message_list_t* list = (can_message_list_t*)ml;
-  can_message_set_send_timer(&list->list[idx], timer_fd, parent_fd);
+
+  if (list->cnt == list->max_cnt) {
+    fprintf(stderr, "list is full, cannot add new can message!\n");
+    return -1;
+  }
+
+  uint16_t idx = find_next_empty_idx(list);
+  if (idx > list->max_cnt) {
+    fprintf(stderr, "can message not found!\n");
+    return -1;
+  }
+
+  list->list[idx] = msg;
+  list->cnt++;
   return 0;
 }
