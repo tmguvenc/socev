@@ -68,7 +68,7 @@ int create_can_socket(const char* iface) {
     goto can_err;
   }
 
-  return 0;
+  return socket_fd;
 
 can_err:
   if (socket_fd != -1) {

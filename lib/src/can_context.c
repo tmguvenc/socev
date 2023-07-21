@@ -130,7 +130,7 @@ void* can_context_create(const can_context_params* params) {
         }
       }
 
-      if (setsockopt(ctx->fd[idx], SOL_CAN_RAW, CAN_RAW_FILTER, filters,
+      if (setsockopt(ctx->fd[0], SOL_CAN_RAW, CAN_RAW_FILTER, filters,
                      sizeof(struct can_filter) * k) == -1) {
         fprintf(stderr, "cannot add can filters: %s\n", strerror(errno));
         goto create_err;
