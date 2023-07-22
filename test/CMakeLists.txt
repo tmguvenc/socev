@@ -4,7 +4,8 @@ project(test)
 find_package(GTest REQUIRED)
 
 set (tests
-      tcp_test)
+      tcp_test
+      can_test)
 
 include_directories(include)
 include_directories(${SOCEV_LIB_INCLUDE_DIR})

@@ -6,6 +6,7 @@
 struct timespec;
 
 int create_listener_socket(uint16_t port);
+int create_can_socket(const char* iface);
 int set_socket_nonblocking(int fd);
 
 struct timespec to_timespec(const int64_t interval_us);

@@ -2,11 +2,15 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/can.h>
+#include <linux/can/raw.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/timerfd.h>
 #include <time.h>
 #include <unistd.h>
@@ -27,6 +31,51 @@ int set_socket_nonblocking(int fd) {
   }
 
   return result;
+}
+
+int create_can_socket(const char* iface) {
+  struct sockaddr_can addr;
+  struct can_frame frame;
+  struct ifreq ifr;
+  int socket_fd = -1;
+
+  if (!iface) {
+    fprintf(stderr, "invalid can interface name\n");
+    goto can_err;
+  }
+
+  socket_fd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+  if (socket_fd == -1) {
+    fprintf(stderr, "create_can_socket err: %s\n", strerror(errno));
+    goto can_err;
+  }
+
+  strcpy(ifr.ifr_name, iface);
+  if (ioctl(socket_fd, SIOCGIFINDEX, &ifr) == -1) {
+    fprintf(stderr, "create_can_socket ioctl err: %s\n", strerror(errno));
+    goto can_err;
+  }
+
+  if (set_socket_nonblocking(socket_fd) == -1) {
+    goto can_err;
+  }
+
+  addr.can_family = AF_CAN;
+  addr.can_ifindex = ifr.ifr_ifindex;
+
+  if (bind(socket_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+    fprintf(stderr, "create_can_socket bind err: %s\n", strerror(errno));
+    goto can_err;
+  }
+
+  return socket_fd;
+
+can_err:
+  if (socket_fd != -1) {
+    close(socket_fd);
+  }
+
+  return -1;
 }
 
 int create_listener_socket(uint16_t port) {

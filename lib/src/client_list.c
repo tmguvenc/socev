@@ -126,7 +126,7 @@ int client_list_add_client(void* cl, void* ci) {
 }
 
 static inline uint16_t get_client_idx(client_list_t* list, int fd,
-                                      client_get_result_t* out) {
+                                      result_t* out) {
   uint16_t idx = 0;
   for (; idx < list->max_cnt; ++idx) {
     if (client_get_fd(list->list[idx]) == fd) {
@@ -171,7 +171,7 @@ int client_list_del_client(void* cl, int client_fd) {
   return 0;
 }
 
-int client_list_get_client(void* cl, int fd, client_get_result_t* out) {
+int client_list_get_client(void* cl, int fd, result_t* out) {
   if (!cl) {
     fprintf(stderr, "invalid list object!\n");
     return -1;

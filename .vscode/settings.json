@@ -11,7 +11,12 @@
     "linked_list.h": "c",
     "epoll_helper.h": "c",
     "tcp_context.h": "c",
-    "epoll.h": "c"
+    "epoll.h": "c",
+    "can.h": "c",
+    "utils.h": "c",
+    "definitions.h": "c",
+    "socket.h": "c",
+    "result.h": "c"
   },
   "cmake.configureOnOpen": false,
   "editor.defaultFormatter": "xaver.clang-format"
