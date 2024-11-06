@@ -216,6 +216,8 @@ int tcp_context_service(void* tcp_ctx, int timeout_ms) {
 
       if (get_res.type == FD_TIMER) {
         // process timer expired
+        client_set_timer_us(get_res.client, 0);
+
         if (ctx->callback) {
           ctx->callback(EVT_CLIENT_TIMER_EXPIRED, get_res.client, NULL, 0);
         }

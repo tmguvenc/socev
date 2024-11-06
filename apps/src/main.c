@@ -19,16 +19,16 @@ static void callback(const event_type ev, void* client, const void* in,
     case EVT_CLIENT_DATA_RECEIVED:
       printf("received from [%s:%d]: %s\n", client_ip, port, (const char*)in);
       client_callback_on_writable(client);
-      client_set_timer_us(client, 1000);
+      client_set_timer_us(client, 1000000);
       break;
     case EVT_CLIENT_WRITABLE: {
       char buffer[80];
-      int pos = snprintf(buffer, sizeof(buffer), "here is your answer\n");
+      int pos = snprintf(buffer, sizeof(buffer), "from server\n");
       client_write(client, buffer, pos);
     } break;
     case EVT_CLIENT_TIMER_EXPIRED: {
       char buffer[80];
-      int pos = snprintf(buffer, sizeof(buffer), "here is your answer\n");
+      int pos = snprintf(buffer, sizeof(buffer), "your time is up\n");
       client_write(client, buffer, pos);
     } break;
     default:

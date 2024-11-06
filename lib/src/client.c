@@ -119,7 +119,7 @@ void client_set_timer_us(void* client, const uint64_t timeout_us) {
   if (client) {
     client_t* clnt = (client_t*)client;
 
-    if (timeout_us == 0) {
+    if (timeout_us != 0) {
       clnt->timer_events |= EPOLLIN;
     } else {
       clnt->timer_events &= ~EPOLLIN;
