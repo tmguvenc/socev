@@ -11,7 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 
-int set_socket_nonblocking(int fd) {
+int utils_set_socket_nonblocking(int fd) {
   int flags = fcntl(fd, F_GETFL, 0);
   if (flags == -1) {
     fprintf(stderr, "get socket flags err: %s\n", strerror(errno));
@@ -29,7 +29,7 @@ int set_socket_nonblocking(int fd) {
   return result;
 }
 
-int create_listener_socket(uint16_t port) {
+int utils_create_listener_socket(uint16_t port) {
   int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (socket_fd == -1) {
     fprintf(stderr, "create_listener_socket err: %s\n", strerror(errno));
@@ -44,8 +44,7 @@ int create_listener_socket(uint16_t port) {
     return -1;
   }
 
-  struct sockaddr_in server;
-  memset(&server, 0, sizeof(struct sockaddr_in));
+  struct sockaddr_in server = {0};
 
   server.sin_family = AF_INET;
   server.sin_port = htons(port);
@@ -61,42 +60,18 @@ int create_listener_socket(uint16_t port) {
   return socket_fd;
 }
 
-struct timespec to_timespec(const int64_t interval_us) {
-  struct timespec ts = {
-      .tv_sec = interval_us / 1e6,
-      .tv_nsec = (interval_us - (interval_us / 1e6) * 1e6) * 1e6};
+static const int64_t kSecToUsec = 1000000;
+static const int64_t kUSecToNSec = 1000;
 
-  return ts;
-}
-
-int arm_timer(int timer_fd, const int64_t interval_us) {
-  struct timespec now;
-  int result = clock_gettime(CLOCK_REALTIME, &now);
-  if (result == -1) {
-    fprintf(stderr, "clock_gettime err: %s\n", strerror(errno));
-    return -1;
-  }
-
-  struct timespec ti = to_timespec(interval_us);
-
+int utils_set_timer_us(int timer_fd, const int64_t interval_us) {
   struct itimerspec new_value = {
-      // initial expiration time
-      .it_value = {.tv_sec = now.tv_sec + ti.tv_sec,
-                   .tv_nsec = now.tv_nsec + ti.tv_nsec}};
+      .it_value = {
+          .tv_sec = interval_us / kSecToUsec,
+          .tv_nsec = (interval_us - (interval_us / kSecToUsec) * kSecToUsec) *
+                     kUSecToNSec}};
 
-  if (timerfd_settime(timer_fd, TFD_TIMER_ABSTIME, &new_value, NULL) == -1) {
+  if (timerfd_settime(timer_fd, 0, &new_value, NULL) == -1) {
     fprintf(stderr, "timerfd_settime err: %s\n", strerror(errno));
-    return -1;
-  }
-
-  return 0;
-}
-
-int disarm_timer(int timer_fd) {
-  struct itimerspec new_value = {};
-
-  if (timerfd_settime(timer_fd, TFD_TIMER_ABSTIME, &new_value, NULL) == -1) {
-    fprintf(stderr, "cannot disarm timer: [%s]\n", strerror(errno));
     return -1;
   }
 

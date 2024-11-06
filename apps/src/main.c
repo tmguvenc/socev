@@ -5,8 +5,6 @@
 #include "stdio.h"
 #include "tcp_context.h"
 
-static char buffer[80];
-
 static void callback(const event_type ev, void* client, const void* in,
                      const uint32_t len) {
   const char* client_ip = client_get_ip(client);
@@ -21,17 +19,16 @@ static void callback(const event_type ev, void* client, const void* in,
     case EVT_CLIENT_DATA_RECEIVED:
       printf("received from [%s:%d]: %s\n", client_ip, port, (const char*)in);
       client_callback_on_writable(client);
-      client_enable_timer(client, 1);
-      client_set_timer(client, 1000000);
+      client_set_timer_us(client, 1000);
       break;
     case EVT_CLIENT_WRITABLE: {
-      memset(buffer, 0, sizeof(buffer));
-      int pos = sprintf(buffer, "here is your answer\n");
+      char buffer[80];
+      int pos = snprintf(buffer, sizeof(buffer), "here is your answer\n");
       client_write(client, buffer, pos);
     } break;
     case EVT_CLIENT_TIMER_EXPIRED: {
-      memset(buffer, 0, sizeof(buffer));
-      int pos = sprintf(buffer, "your time is up\n");
+      char buffer[80];
+      int pos = snprintf(buffer, sizeof(buffer), "here is your answer\n");
       client_write(client, buffer, pos);
     } break;
     default:

@@ -3,13 +3,9 @@
 
 #include <stdint.h>
 
-struct timespec;
+int utils_create_listener_socket(uint16_t port);
+int utils_set_socket_nonblocking(int fd);
 
-int create_listener_socket(uint16_t port);
-int set_socket_nonblocking(int fd);
-
-struct timespec to_timespec(const int64_t interval_us);
-int arm_timer(int timer_fd, const int64_t interval_us);
-int disarm_timer(int timer_fd);
+int utils_set_timer_us(int timer_fd, const int64_t interval_us);
 
 #endif  // LIB_UTILS_H_

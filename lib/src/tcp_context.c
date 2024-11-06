@@ -63,7 +63,7 @@ void* tcp_context_create(tcp_context_params params) {
 
   ctx->callback = params.callback;
 
-  ctx->fd = create_listener_socket(params.port);
+  ctx->fd = utils_create_listener_socket(params.port);
   if (ctx->fd == -1) {
     fprintf(stderr, "socket create failed\n");
     goto create_error;
@@ -118,18 +118,18 @@ void tcp_context_destroy(void* tcp_ctx) {
 }
 
 int do_accept(tcp_context* ctx) {
-  struct sockaddr_in client_addr;
-  memset(&client_addr, 0, sizeof(struct sockaddr_in));
+  struct sockaddr_in client_addr = {0};
   socklen_t size = sizeof(struct sockaddr_in);
 
   int new_fd = accept(ctx->fd, (struct sockaddr*)(&client_addr), &size);
   if (new_fd == -1) {
     fprintf(stderr, "do_accept err: %s\n", strerror(errno));
-    return -1;
+    goto err;
   }
 
-  if (set_socket_nonblocking(new_fd) == -1) {
-    return -1;
+  if (utils_set_socket_nonblocking(new_fd) == -1) {
+    close(new_fd);
+    goto err;
   }
 
   void* client = client_create(
@@ -137,11 +137,11 @@ int do_accept(tcp_context* ctx) {
 
   if (!client) {
     fprintf(stderr, "cannot create new client");
-    return -1;
+    goto err;
   }
 
   if (client_list_add_client(ctx->client_list, client) == -1) {
-    return -1;
+    goto err;
   }
 
   if (ctx->callback) {
@@ -149,11 +149,17 @@ int do_accept(tcp_context* ctx) {
   }
 
   return new_fd;
+err:
+  if (new_fd != -1) {
+    close(new_fd);
+  }
+
+  return -1;
 }
 
 int do_receive(tcp_context* ctx, void* client) {
-  int fd = client_get_fd(client);
-  ssize_t bytes = recv(fd, ctx->recv_buf, INTERNAL_BUFFER_SIZE, 0);
+  const int fd = client_get_fd(client);
+  const ssize_t bytes = recv(fd, ctx->recv_buf, INTERNAL_BUFFER_SIZE, 0);
   if (bytes == -1) {
     fprintf(stderr, "do_receive err: %s\n", strerror(errno));
     return -1;
@@ -210,8 +216,6 @@ int tcp_context_service(void* tcp_ctx, int timeout_ms) {
 
       if (get_res.type == FD_TIMER) {
         // process timer expired
-        client_set_timer(get_res.client, 0);     // stop the timer
-        client_enable_timer(get_res.client, 0);  // disable the timer
         if (ctx->callback) {
           ctx->callback(EVT_CLIENT_TIMER_EXPIRED, get_res.client, NULL, 0);
         }
