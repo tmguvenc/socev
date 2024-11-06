@@ -115,26 +115,18 @@ uint16_t client_get_port(void* client) {
   return 0;
 }
 
-void client_enable_timer(void* client, int en) {
+void client_set_timer_us(void* client, const uint64_t timeout_us) {
   if (client) {
-    client_t* inf = (client_t*)client;
-    if (en) {
-      inf->timer_events |= EPOLLIN;
-    } else {
-      inf->timer_events &= ~EPOLLIN;
-    }
-    epoll_ctl_change(inf->efd, inf->timer_fd, inf->timer_events);
-  }
-}
+    client_t* clnt = (client_t*)client;
 
-void client_set_timer(void* client, const uint64_t timeout_us) {
-  if (client) {
-    client_t* inf = (client_t*)client;
     if (timeout_us != 0) {
-      arm_timer(inf->timer_fd, timeout_us);
+      clnt->timer_events |= EPOLLIN;
     } else {
-      disarm_timer(inf->timer_fd);
+      clnt->timer_events &= ~EPOLLIN;
     }
+
+    epoll_ctl_change(clnt->efd, clnt->timer_fd, clnt->timer_events);
+    utils_set_timer_us(clnt->timer_fd, timeout_us);
   }
 }
 

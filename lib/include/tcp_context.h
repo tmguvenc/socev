@@ -15,11 +15,11 @@ typedef enum {
 typedef struct {
   uint16_t port;
   uint64_t max_client_count;
-  void (*callback)(const event_type ev, void* c_info, const void* in,
+  void (*callback)(const event_type ev, void* client, const void* in,
                    const uint32_t len);
 } tcp_context_params;
 
-void* tcp_context_create(tcp_context_params params);
+void* tcp_context_create(const tcp_context_params* params);
 void tcp_context_destroy(void* tcp_ctx);
 
 int tcp_context_service(void* tcp_ctx, int timeout_ms);

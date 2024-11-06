@@ -23,6 +23,7 @@ RUN DEBIAN_FRONTEND=noninteractive \
     sshpass \
     sshpass \
     python3 \
+    python3-pip \
     tcpdump \
     libtool \
     libssl-dev \
@@ -31,6 +32,8 @@ RUN DEBIAN_FRONTEND=noninteractive \
   && apt-get -y autoremove \
   && apt-get clean autoclean \
   && rm -rf /var/lib/apt/lists/{apt,dpkg,cache,log} /tmp/* /var/tmp/*
+
+RUN pip3 install clang-format
 
 ENV USERNAME=docker_user
 ENV USER_UID=1000

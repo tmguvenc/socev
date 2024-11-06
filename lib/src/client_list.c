@@ -21,7 +21,7 @@ void* client_list_create(uint16_t cnt) {
     return NULL;
   }
 
-  cl = (client_list_t*)calloc(1, sizeof(client_list_t));
+  cl = (client_list_t*)malloc(sizeof(client_list_t));
   if (!cl) {
     fprintf(stderr, "cannot create client list\n");
     goto create_err;
