@@ -28,8 +28,15 @@ typedef struct {
   struct epoll_event* events;
 } tcp_context;
 
-void* tcp_context_create(tcp_context_params params) {
-  tcp_context* ctx = (tcp_context*)calloc(1, sizeof(tcp_context));
+void* tcp_context_create(const tcp_context_params* params) {
+  tcp_context* ctx = NULL;
+
+  if (!params) {
+    fprintf(stderr, "tcp_context_create err: invalid parameters\n");
+    goto create_error;
+  }
+
+  ctx = (tcp_context*)calloc(1, sizeof(tcp_context));
 
   if (!ctx) {
     fprintf(stderr, "tcp_context_create err: cannot create context\n");
@@ -48,22 +55,22 @@ void* tcp_context_create(tcp_context_params params) {
     goto create_error;
   }
 
-  ctx->client_list = client_list_create(params.max_client_count);
+  ctx->client_list = client_list_create(params->max_client_count);
   if (!ctx->client_list) {
     fprintf(stderr, "tcp_context_create err: cannot create client list\n");
     goto create_error;
   }
 
   ctx->events =
-      calloc(params.max_client_count * 2 + 1, sizeof(struct epoll_event));
+      calloc(params->max_client_count * 2 + 1, sizeof(struct epoll_event));
   if (!ctx->events) {
     fprintf(stderr, "tcp_context_create err: cannot create event list\n");
     goto create_error;
   }
 
-  ctx->callback = params.callback;
+  ctx->callback = params->callback;
 
-  ctx->fd = utils_create_listener_socket(params.port);
+  ctx->fd = utils_create_listener_socket(params->port);
   if (ctx->fd == -1) {
     fprintf(stderr, "socket create failed\n");
     goto create_error;
@@ -74,7 +81,7 @@ void* tcp_context_create(tcp_context_params params) {
   }
 
   // start listening incoming connections
-  if (listen(ctx->fd, params.max_client_count) == -1) {
+  if (listen(ctx->fd, params->max_client_count) == -1) {
     fprintf(stderr, "tcp_context_create err: %s\n", strerror(errno));
     goto create_error;
   }
