@@ -17,7 +17,8 @@ static void callback(const event_type ev, void* client, const void* in,
       printf("client disconnected: %s:%d\n", client_ip, port);
       break;
     case EVT_CLIENT_DATA_RECEIVED:
-      printf("received from [%s:%d]: %s\n", client_ip, port, (const char*)in);
+      printf("received from [%s:%d]: %.*s\n", client_ip, port, len,
+             (const char*)in);
       client_callback_on_writable(client);
       client_set_timer_us(client, 1000000);
       break;

@@ -29,22 +29,29 @@ int utils_set_socket_nonblocking(int fd) {
   return result;
 }
 
-int utils_create_listener_socket(uint16_t port) {
-  int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+int utils_create_listener_socket(uint16_t port, const socket_type st) {
+  const int optval = 1;
+  struct sockaddr_in server = {0};
+
+  int cls = (st == SOCKET_TYPE_TCP) ? SOCK_STREAM : SOCK_DGRAM;
+
+  int socket_fd = socket(AF_INET, cls, 0);
   if (socket_fd == -1) {
-    fprintf(stderr, "create_listener_socket err: %s\n", strerror(errno));
-    return -1;
+    fprintf(stderr, "couldn't create socket: %s\n", strerror(errno));
+    goto err;
   }
 
-  const int optval = 1;
   if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &optval,
                  sizeof(optval)) == -1) {
-    fprintf(stderr, "create_listener_socket err: %s\n", strerror(errno));
-    close(socket_fd);
-    return -1;
+    fprintf(stderr, "couldn't set socket option: %s\n", strerror(errno));
+    goto err;
   }
 
-  struct sockaddr_in server = {0};
+  if (utils_set_socket_nonblocking(socket_fd) == -1) {
+    fprintf(stderr, "couldn't make socket (%d) non-blocking: %s\n", socket_fd,
+            strerror(errno));
+    goto err;
+  }
 
   server.sin_family = AF_INET;
   server.sin_port = htons(port);
@@ -52,12 +59,18 @@ int utils_create_listener_socket(uint16_t port) {
 
   if (bind(socket_fd, (struct sockaddr*)(&server),
            sizeof(struct sockaddr_in)) == -1) {
-    fprintf(stderr, "create_listener_socket err: %s\n", strerror(errno));
-    close(socket_fd);
-    return -1;
+    fprintf(stderr, "couldn't bind socket: %s\n", strerror(errno));
+    goto err;
   }
 
   return socket_fd;
+
+err:
+  if (socket_fd != -1) {
+    close(socket_fd);
+  }
+
+  return -1;
 }
 
 static const int64_t kSecToUsec = 1000000;
